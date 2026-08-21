@@ -240,11 +240,16 @@ def validate(
     if solves:
         drift = drift_report(solves)
         bad = {k: v for k, v in drift.items() if abs(v) > max_drift_px_per_frame}
+        # These names are anchor ids, not overlay ids, so they are reported in
+        # the text and never fed to apply_report(): a drifting solve is a
+        # problem with the whole track, not with one graphic that happens to
+        # share a name.
         rep.add("TRACKING", "no tracking drift",
                 Severity.FAIL if bad else Severity.PASS,
-                ", ".join(f"{k}: {v:+.4f}px/frame" for k, v in sorted(bad.items()))
-                if bad else f"{len(drift)} anchors stable over the solve",
-                list(bad))
+                ("residual trending on " +
+                 ", ".join(f"{k} {v:+.4f}px/frame" for k, v in sorted(bad.items()))
+                 + " - re-check these anchors before trusting the solve")
+                if bad else f"{len(drift)} anchors stable over the solve")
         worst = max((s.max_px for s in solves), default=0.0)
         rep.add("TRACKING", "no sliding markers",
                 Severity.PASS if worst <= max_rms_px * 2 else Severity.WARN,

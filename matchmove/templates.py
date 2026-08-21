@@ -10,7 +10,7 @@ from __future__ import annotations
 PROJECT_TEMPLATE = r"""{
   "_help": "matchmove project file. Fill from the yardage book, the course map and the drone footage. Leave anything unconfirmed as null - the pipeline omits it rather than inventing it.",
 
-  "hole_spec": "hole07_spec.json",
+  "hole_spec": "hole.json",
   "_help_hole_spec": "Path to a hole spec file, or an inline hole spec object with the same shape as `matchmove template hole`.",
 
   "camera": {
@@ -26,7 +26,7 @@ PROJECT_TEMPLATE = r"""{
   },
 
   "anchors": {
-    "_help": "Section 05 spatial anchors. For each solved frame, list at least 4 permanent landmarks you can see in the drone frame and locate on the course map: x/y are pixel coordinates in that frame; world is [east, north, up] metres from the Green Center, or give lat/lon instead. Prefer things that cannot move - green edges, bunker lips, cart path junctions, building corners.",
+    "_help": "PLACEHOLDER NUMBERS - replace every x/y below with pixels you actually read off your own footage, or the solve will fail with a large reprojection error (which is the pipeline telling you the anchors are wrong). Section 05 spatial anchors. For each solved frame, list at least 4 permanent landmarks you can see in the drone frame and locate on the course map: x/y are pixel coordinates in that frame; world is [east, north, up] metres from the Green Center, or give lat/lon instead. Prefer things that cannot move - green edges, bunker lips, cart path junctions, building corners.",
     "0": [
       {"anchor_id": "green_center", "world": [0, 0, 0], "x": 1920, "y": 1180},
       {"anchor_id": "green_front_edge", "world": [0, -14, 0], "x": 1920, "y": 1290},

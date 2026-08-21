@@ -40,12 +40,17 @@ open out/demo/hole07_preview.html
 
 ## 실제 홀 작업 흐름
 
-### 1. 입력 템플릿 생성
+### 1. 홀 폴더 만들기
 
 ```bash
-matchmove template hole    > hole07.json      # 홀 데이터 (섹션 35)
-matchmove template project > project.json     # 카메라 + 앵커 + 지형
+matchmove init hole07/
+# hole07/hole.json      <- 홀 데이터 (그린·티·벙커·거리)
+# hole07/project.json   <- 카메라 · 앵커 · 지형
 ```
+
+두 파일은 서로 참조하도록 이름이 맞춰져 나옵니다. 파일 안의 `_help` 항목은 채우는
+사람을 위한 설명이며 실행 시 무시됩니다. **확인 못 한 값은 `null`로 두세요** —
+비워두면 제외되고, 지어내지 않습니다.
 
 ### 2. 홀 데이터 채우기 (`hole07.json`)
 
@@ -209,7 +214,7 @@ matchmove render   project.json -o out/  # 전체 파이프라인 + 모든 익�
 돌아오는지 확인합니다(허용 오차 1e-6 m).
 
 ```bash
-pip install pytest && python -m pytest -q     # 104 tests
+pip install pytest && python -m pytest -q     # 112 tests
 ```
 
 ---

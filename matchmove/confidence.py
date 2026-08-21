@@ -238,7 +238,11 @@ class FactSet:
         for key in sorted(self._by_field):
             fact = self.get(key)
             if fact is None:
-                out.append(Omission(key, FactKind.IDENTITY, OmissionReason.MISSING))
+                # Every candidate had value None, so resolve_conflict dropped
+                # them all; keep the declared kind so the report still says
+                # what sort of information is missing.
+                declared = self._by_field[key][0].kind
+                out.append(Omission(key, declared, OmissionReason.MISSING))
                 continue
             om = fact.omission()
             if om is not None:

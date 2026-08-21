@@ -217,3 +217,46 @@ def test_the_shipped_templates_are_valid_json():
     assert "anchors" in project and "camera" in project
     spec = HoleSpec.from_dict(hole)
     assert spec.green() is not None
+
+
+def test_a_drifting_solve_does_not_strip_unrelated_overlays():
+    """Anchor ids and overlay ids are different namespaces (section 36)."""
+    from matchmove.camera import CameraPose, Intrinsics
+    from matchmove.solve import FrameSolve
+
+    spec = demo_spec()
+    elements, _ = build_overlays(spec, FlatTerrain())
+    intr = Intrinsics.from_fov(1920, 1080, 78.0)
+    pose = CameraPose(Vec3(0, -200, 90), 0.0, -25.0, 0.0)
+    # An anchor named after a real overlay element, with a rising residual.
+    solves = [
+        FrameSolve(f, pose, intr, 0.5, 0.9, 4, {"green": 0.1 + 0.05 * f})
+        for f in range(0, 60, 10)
+    ]
+    report = validate(spec, elements, demo_track(), solves)
+    drift = find(report, "no tracking drift")
+    assert drift.severity is Severity.FAIL
+    assert drift.element_ids == []
+    kept = apply_report(elements, report)
+    assert "green" in {e.id for e in kept}, "the green outline must survive"
+
+
+def demo_track():
+    from matchmove.camera import CameraPose, CameraTrack, Intrinsics, Keyframe
+
+    t = CameraTrack(Intrinsics.from_fov(1920, 1080, 78.0), 30.0, locked=False)
+    t.set_keyframes([Keyframe(0, CameraPose(Vec3(0, -300, 100), 0.0, -25.0, 0.0)),
+                     Keyframe(60, CameraPose(Vec3(0, -100, 60), 0.0, -30.0, 0.0))])
+    t.locked = True
+    t.solve_error_px = 0.5
+    return t
+
+
+def test_a_null_fact_keeps_the_kind_it_was_declared_with():
+    from matchmove.confidence import Fact, FactKind, FactSet, Source, Confidence
+
+    fs = FactSet([Fact("green_slope_percent", None, FactKind.SLOPE,
+                       Source.OFFICIAL, Confidence.CONFIRMED)])
+    om = fs.omissions()[0]
+    assert om.kind is FactKind.SLOPE
+    assert "slope" in om.describe()

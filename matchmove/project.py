@@ -170,9 +170,26 @@ def _world_point(entry: Dict, datum: Optional[LatLon]) -> Vec3:
     raise ProjectError(f"anchor {entry.get('anchor_id')} has no world or lat/lon position")
 
 
+def strip_help_keys(value: object) -> object:
+    """Drop ``_``-prefixed keys anywhere in the structure.
+
+    The shipped templates document themselves with ``_help`` notes sitting
+    right next to real values.  They are for the person filling the file in,
+    so the loader removes them before anything tries to parse them.
+    """
+    if isinstance(value, dict):
+        return {k: strip_help_keys(v) for k, v in value.items()
+                if not (isinstance(k, str) and k.startswith("_"))}
+    if isinstance(value, list):
+        return [strip_help_keys(v) for v in value]
+    return value
+
+
 def load_project(path: str | Path) -> Project:
-    """Load a project file (see ``templates/project_template.json``)."""
-    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    """Load a project file (see ``matchmove template project``)."""
+    data = strip_help_keys(json.loads(Path(path).read_text(encoding="utf-8")))
+    if not isinstance(data, dict):
+        raise ProjectError("project file must contain a JSON object")
     base = Path(path).parent
 
     spec_ref = data.get("hole_spec")

@@ -1,5 +1,6 @@
 """Command line interface.
 
+    matchmove init       hole07/                   # new hole, ready to fill in
     matchmove template project > project.json      # section 35 input template
     matchmove solve      project.json              # camera solve + residuals
     matchmove validate   project.json              # section 36 report only
@@ -27,8 +28,16 @@ from .templates import HOLE_SPEC_TEMPLATE, PROJECT_TEMPLATE
 def _load(path: str) -> Project:
     try:
         return load_project(path)
-    except (ProjectError, FileNotFoundError, json.JSONDecodeError) as exc:
-        print(f"error: {exc}", file=sys.stderr)
+    except FileNotFoundError as exc:
+        print(f"error: cannot open {exc.filename}", file=sys.stderr)
+        print("hint: run `matchmove init <folder>` to create a matching "
+              "project.json + hole.json pair", file=sys.stderr)
+        raise SystemExit(2)
+    except json.JSONDecodeError as exc:
+        print(f"error: {path} is not valid JSON - {exc}", file=sys.stderr)
+        raise SystemExit(2)
+    except (ProjectError, ValueError, KeyError, TypeError) as exc:
+        print(f"error: {path} could not be read: {exc}", file=sys.stderr)
         raise SystemExit(2)
 
 
@@ -39,6 +48,29 @@ def cmd_template(args: argparse.Namespace) -> int:
         print(f"wrote {args.output}")
     else:
         print(text)
+    return 0
+
+
+def cmd_init(args: argparse.Namespace) -> int:
+    """Create a ready-to-fill project folder with matching file names."""
+    folder = Path(args.folder)
+    if folder.exists() and any(folder.iterdir()) and not args.force:
+        print(f"error: {folder} already exists and is not empty "
+              "(pass --force to overwrite)", file=sys.stderr)
+        return 2
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "hole.json").write_text(HOLE_SPEC_TEMPLATE, encoding="utf-8")
+    (folder / "project.json").write_text(PROJECT_TEMPLATE, encoding="utf-8")
+    print(f"created {folder}/hole.json      <- hole data: green, tee, bunkers, distances")
+    print(f"created {folder}/project.json   <- camera, anchor points, terrain")
+    print()
+    print("next:")
+    print(f"  1. fill in {folder}/hole.json from the yardage book and course map")
+    print(f"  2. mark 4+ fixed landmarks per frame in {folder}/project.json")
+    print(f"  3. matchmove render {folder}/project.json -o out/")
+    print()
+    print("every field you cannot confirm should stay null - the pipeline omits")
+    print("unconfirmed data instead of inventing it.")
     return 0
 
 
@@ -126,6 +158,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--version", action="version", version=f"matchmove {__version__}")
     sub = p.add_subparsers(dest="command", required=True)
+
+    i = sub.add_parser("init", help="create a new hole folder ready to fill in")
+    i.add_argument("folder")
+    i.add_argument("--force", action="store_true",
+                   help="overwrite an existing non-empty folder")
+    i.set_defaults(func=cmd_init)
 
     t = sub.add_parser("template", help="print a section 35 input template")
     t.add_argument("kind", choices=["project", "hole"], nargs="?", default="project")

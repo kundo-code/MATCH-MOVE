@@ -360,8 +360,10 @@ class HoleSpec:
 
     @staticmethod
     def load(path: str | Path) -> "HoleSpec":
+        from .project import strip_help_keys
+
         return HoleSpec.from_dict(
-            json.loads(Path(path).read_text(encoding="utf-8"))
+            strip_help_keys(json.loads(Path(path).read_text(encoding="utf-8")))
         )
 
 
