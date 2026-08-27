@@ -364,7 +364,8 @@ def main():
         w.writerow([
             "ID", "L1_카테고리", "국가", "지역", "연령대", "질문",
             "GADS", "ARS", "Opportunity", "콘텐츠상태", "콘텐츠타입후보",
-            "콘텐츠링크", "최종업데이트일", "담당자", "비고",
+            "콘텐츠링크", "AIVS", "AIVS_확인일", "GEO최적화상태",
+            "우선순위액션", "최종업데이트일", "담당자", "비고",
         ])
         for i, (l1, country, region, age, question, tier) in enumerate(rows, start=1):
             gads = compute_gads(l1, tier, question)
@@ -373,9 +374,14 @@ def main():
             status = "완료" if ars >= 60 else "미제작"
             ctype = "블로그+쇼츠" if l1 in CONTENT_TYPE_HEAVY else "블로그"
             qid = f"MM-{i:04d}"
+            # AIVS(더골프트렌드 AI 노출 점수)는 실제로 ChatGPT/Perplexity/Gemini/네이버 Cue
+            # 등에 직접 질문을 입력해 확인해야 하는 값이라 생성 시점엔 비워둔다.
+            # (docs/DESIGN.md 8절 측정 방법 참고, Weekly_Trend_Log에서 주1회 채움)
             w.writerow([
                 qid, l1, country, region, age, question,
-                gads, ars, opp, status, ctype, "", "", "", "",
+                gads, ars, opp, status, ctype, "", "", "", "미확인",
+                "신규제작대기" if status == "미제작" else "AI노출확인필요",
+                "", "", "",
             ])
 
     print(f"생성 완료: {len(rows)}행 -> {out_path}")
@@ -393,6 +399,8 @@ def main():
         w.writerow(["ARS", "콘텐츠품질/최신성(Quality)", "35%", "6개월 이내 업데이트, 실제 데이터 포함 여부"])
         w.writerow(["ARS", "정보확보용이성(Answerability)", "25%", "여행사 내부자료로 즉시 답변 가능한 정도"])
         w.writerow(["Opportunity", "GADS - ARS", "-", "값이 높을수록 '수요는 큰데 콘텐츠가 없는' 우선순위 질문"])
+        w.writerow(["AIVS", "AI 답변 내 브랜드 언급/인용 여부", "0/40/70/100", "0=미노출, 40=일반 언급만, 70=간접 인용(URL 없음), 100=직접 인용+링크 노출"])
+        w.writerow(["AIVS", "측정 방법", "-", "ChatGPT/Perplexity/Gemini/네이버 Cue에 질문을 직접 입력해 '더골프트렌드' 언급·인용 여부를 육안 확인 (주1회, docs/DESIGN.md 8절)"])
     print(f"설정 완료: {cfg_path}")
 
 
