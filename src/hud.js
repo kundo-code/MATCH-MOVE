@@ -44,7 +44,7 @@ function countryLabels(ctx, info, u, route) {
     .sort((a, b) => (route.has(b.code) - route.has(a.code)) || a.rank - b.rank);
   const fade = smooth((info.dist - 0.12) / 0.25) * smooth((3.4 - info.dist) / 1.0);
   for (const c of items) {
-    const size = (route.has(c.code) ? 21 : 17) * u;
+    const size = (route.has(c.code) ? 21 : 17) * 0.85 * u;
     ctx.font = `700 ${size}px ${FONT}`;
     const w = ctx.measureText(c.ko).width, h = size;
     const box = [c.x - w / 2 - 6 * u, c.y - h / 2 - 4 * u, w + 12 * u, h + 8 * u];

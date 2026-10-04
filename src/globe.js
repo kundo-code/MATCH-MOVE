@@ -342,60 +342,64 @@ export class GlobeScene {
     const dOver = this.options.globeIntro ? Math.max(2.5, dFit * 1.5) : dFit;
     const dEnd = 0.03;
 
-    // 1) 전체 지구 → 경로 전체 샷
+    // 1) (옵션) 전체 지구 → 설정한 지도 범위
     const a = this.options.globeIntro ? smoother(t / intro) : 1;
-    let C = this.M.clone();
-    let dist = Math.exp(lerp(Math.log(dOver), Math.log(dFit), a));
-    let tilt = lerp(0, tiltFit, a);
-    let psi = lerpAngle(0, psiFit, a);
+    const dist0 = Math.exp(lerp(Math.log(dOver), Math.log(dFit), a));
+    const tilt0 = lerp(0, tiltFit, a);
+    const psi0 = lerpAngle(0, psiFit, a);
 
-    // 줌인은 출발~도착의 중간 지점에서 시작해 도착 지점에서 끝난다
+    // 2) 줌인은 출발 지점부터 도착 지점까지 '전체 구간'에 걸쳐 자연스럽게 진행된다
+    //    (시작은 설정한 지도 범위, 끝은 도착 공항 근접). zs: 전 구간 진행도, z: 마무리 연출(기체·타겟 크기 등)용
+    const zs = smoother(s);
     const z = smoother((s - 0.5) / 0.5);
 
-    // 2) 비행기를 느슨하게 따라가기
-    const planePos = this.#pointAt(s).normalize();
-    const f = smooth(p / 0.7) * a;
-    C = slerpV(C, planePos, 0.55 * f);
-    dist *= 1 - 0.18 * f;
+    // 도착 연출 방향 (대한민국 출발 기준 지도 화면):
+    //  · 도착지가 서쪽(좌측·좌하단)이면 비행기가 화면 우상단 → 좌하단으로 들어와 착륙
+    //  · 도착지가 동쪽(우측·우하단)이면 비행기가 화면 좌상단 → 우하단으로 들어와 착륙
+    // 화면 위쪽이 가리키는 방위(psi)를 비행 방위에서 135°/225° 돌려 맞춘다.
+    const arriveBearing = this.#bearingOfTangent(this.#pointAt(this.sTouch), this.#tangentAt(this.sTouch));
+    const westbound = Math.sin(this.routeBearing * D2R) < 0;
+    const psiEnd = (arriveBearing - (westbound ? 225 : 135) + 720) % 360;
+    const tilt = lerp(tilt0, 52, zs);
+    const psi = lerpAngle(psi0, psiEnd, zs);
 
-    // 사용자가 드래그로 옮긴 지도 위치 (화면 높이 단위). 줌인이 진행되면서 서서히 사라진다.
+    // 카메라 중심: 항상 '비행기 ↔ 도착지'의 중간. 출발 시점엔 두 공항의 중간, 도착 시점엔 도착지로 수렴한다
+    const P = this.#pointAt(s);
+    const planePos = P.clone().normalize();
+    let C = slerpV(planePos, this.B, 0.5);
+
+    // 거리: 완만한 로그 줌(easeDist)과, 비행기·도착지가 함께 프레임에 들어오는 최소 거리(reqDist) 중 큰 값을 부드럽게 선택.
+    // 비행 거리가 가깝든 멀든 같은 규칙이라 비행기가 화면 밖으로 밀려나지 않는다.
+    const easeDist = Math.exp(lerp(Math.log(dist0), Math.log(dEnd), zs));
+    const rem = planePos.distanceTo(this.B);
+    const travel = this.#bearingOfTangent(P, this.#tangentAt(s));
+    const rel2 = (travel - psi) * D2R;
+    const exR = rem * Math.abs(Math.sin(rel2));
+    const eyR = rem * Math.abs(Math.cos(rel2)) * Math.cos(tilt * D2R);
+    const zoomEff = lerp(this.options.mapZoom, 1, zs);
+    const reqDist = (Math.max((exR * margin) / (TAN_HALF * aspect), (eyR * margin) / TAN_HALF) / zoomEff) * 0.92;
+    const N = 10; // 소프트 맥스: 두 값이 교차해도 꺾이지 않는다
+    let dist = Math.pow(Math.pow(easeDist, N) + Math.pow(reqDist, N), 1 / N);
     if (this.options.panX || this.options.panY) {
+      // 사용자가 드래그로 옮긴 지도 위치 (화면 높이 단위). 줌인이 진행되면서 서서히 사라진다.
       const { n, e } = localFrame(C);
       const ps = psi * D2R;
       const head = n.clone().multiplyScalar(Math.cos(ps)).addScaledVector(e, Math.sin(ps));
       const right = new THREE.Vector3().crossVectors(head, C).normalize();
-      const unit = dist * 2 * TAN_HALF * (1 - z);
+      const unit = dist * 2 * TAN_HALF * (1 - zs);
       C = C.clone()
         .addScaledVector(right, this.options.panX * unit)
         .addScaledVector(head, (this.options.panY * unit) / Math.max(0.45, Math.cos(tilt * D2R)))
         .normalize();
     }
 
-    // 3) 도착 지점으로 줌인
-    const arriveBearing = this.#bearingOfTangent(this.#pointAt(this.sTouch), this.#tangentAt(this.sTouch));
-    if (z > 0) {
-      // 중심은 '비행기 ↔ 도착지'의 중간에서 시작해 도착지로 수렴하고, 거리는 둘이 함께 프레임에 들어오는 범위 아래로 내려가지 않는다
-      const mid = slerpV(planePos, this.B, 0.5);
-      C = slerpV(C, mid, smooth(z / 0.35));
-      const rem = planePos.distanceTo(this.B);
-      const keepBoth = rem * (aspect >= 1 ? 2.1 : 3.0); // 하단 정보 카드와 겹치지 않도록 여유
-      dist = Math.max(Math.exp(lerp(Math.log(dist), Math.log(dEnd), z)), Math.min(dist, keepBoth));
-      tilt = lerp(tilt, 52, z);
-
-      // 도착 연출 방향 (대한민국 출발 기준 지도 화면):
-      //  · 도착지가 서쪽(좌측·좌하단)이면 비행기가 화면 우상단 → 좌하단으로 들어와 착륙
-      //  · 도착지가 동쪽(우측·우하단)이면 비행기가 화면 좌상단 → 우하단으로 들어와 착륙
-      // 화면 위쪽이 가리키는 방위(psi)를 비행 방위에서 135°/225° 돌려 맞춘다.
-      const westbound = Math.sin(this.routeBearing * D2R) < 0;
-      const psiEnd = (arriveBearing - (westbound ? 225 : 135) + 720) % 360;
-      psi = lerpAngle(psi, psiEnd, z);
-
-      // 도착 공항이 화면 중앙이 아니라 진행 방향 쪽 아래 구석에 놓이도록 카메라 중심을 반대편(위·안쪽)으로 비켜 둔다
+    // 도착 공항이 화면 중앙이 아니라 진행 방향 쪽 아래 구석에 놓이도록 카메라 중심을 반대편(위·안쪽)으로 서서히 비켜 둔다
+    {
       const { n, e } = localFrame(C);
       const ps = psi * D2R;
       const head = n.clone().multiplyScalar(Math.cos(ps)).addScaledVector(e, Math.sin(ps));
       const right = new THREE.Vector3().crossVectors(head, C).normalize();
-      const unit = dist * 2 * TAN_HALF * z * z;
+      const unit = dist * 2 * TAN_HALF * zs * zs;
       C = C.clone()
         .addScaledVector(right, (westbound ? 0.2 : -0.2) * unit * aspect / 1.78)
         .addScaledVector(head, 0.07 * unit)
@@ -454,7 +458,7 @@ export class GlobeScene {
     tan.lerpVectors(flat, tan, smooth(st.s / 0.03)).normalize();
     // 기체 크기: 화면 너비 대비 비율을 유지한다 (멀리 축소돼도 작아 보이지 않게). planeSize로 배율 조절
     const aspect = w / h;
-    const pScale = (aspect >= 1 ? 0.055 : 0.09) * (1 + 0.7 * st.z) * this.options.planeSize * (2 * TAN_HALF * aspect * st.dist);
+    const pScale = (aspect >= 1 ? 0.055 * 0.85 : 0.09 * 0.85) * (1 + 0.7 * st.z) * this.options.planeSize * (2 * TAN_HALF * aspect * st.dist);
     const altitude = planePos.length() - GROUND_R;
     // 바퀴가 지면에 닿도록 기체 중심을 바퀴 길이만큼 띄운다 (지상에서만 적용)
     planePos.addScaledVector(up, 0.105 * pScale * (1 - smooth(altitude / (0.5 * pScale + 1e-6))));
