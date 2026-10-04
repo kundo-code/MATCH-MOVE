@@ -31,7 +31,6 @@ input[type=search] { margin-top: 10px; }
 .times label, .grid2 label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--mute); }
 .times output { color: var(--text); font-weight: 700; font-size: 15px; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.grid2 label:first-child { grid-column: 1 / -1; }
 .hint { color: var(--mute); font-size: 12px; line-height: 1.5; margin: 8px 0 0; }
 .check { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 7px 0; }
 .check small { color: var(--mute); }

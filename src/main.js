@@ -20,6 +20,13 @@ const state = {
 };
 
 let data, scene, hudCtx;
+const ASPECTS = { '16:9': [16, 9], '9:16': [9, 16], '1:1': [1, 1] };
+/** 선택한 비율·해상도의 출력 픽셀 크기 (짧은 변 기준, 짝수로 맞춤 — H.264 요구사항) */
+function outputSize() {
+  const [aw, ah] = ASPECTS[$('aspect').value];
+  const short = +$('quality').value, k = short / Math.min(aw, ah);
+  return [Math.round((aw * k) / 2) * 2, Math.round((ah * k) / 2) * 2];
+}
 const stage = $('stage'), glCanvas = $('gl'), hudCanvas = $('hud');
 
 // ── 데이터/UI 구성 ───────────────────────────────────────────────────
@@ -139,7 +146,7 @@ function applyFlight() {
 
 // ── 프레임 합성 ───────────────────────────────────────────────────────
 function syncPreviewSize() {
-  const [w, h] = $('resolution').value.split('x').map(Number);
+  const [w, h] = outputSize();
   stage.style.setProperty('--ar', w / h);
   stage.style.aspectRatio = `${w} / ${h}`;
   const rect = stage.getBoundingClientRect();
@@ -202,7 +209,7 @@ const stamp = () => new Date().toISOString().replace(/[-:T]/g, '').slice(0, 12);
 const baseName = () => `${meta.airline.id}_${meta.origin.iata}-${meta.dest.iata}_${stamp()}`;
 
 async function savePng() {
-  const [W, H] = $('resolution').value.split('x').map(Number);
+  const [W, H] = outputSize();
   setBusy(true, '이미지 생성 중…');
   try {
     await ensureAssets();
@@ -214,7 +221,7 @@ async function savePng() {
 
 let abort = null;
 async function saveMp4() {
-  const [W, H] = $('resolution').value.split('x').map(Number);
+  const [W, H] = outputSize();
   const fps = +$('fps').value, targetMB = +$('targetMB').value || 50;
   abort = new AbortController();
   setBusy(true, '에셋 준비 중…');
@@ -272,7 +279,7 @@ async function init() {
   $('optCountries').onchange = (e) => { scene.setOptions({ countryLabels: e.target.checked }); refreshMeta(); };
   $('optHd').onchange = (e) => { scene.setOptions({ hdTiles: e.target.checked }); refreshMeta(); };
   $('duration').oninput = (e) => { state.duration = +e.target.value; $('durationOut').textContent = `${state.duration}초`; };
-  $('resolution').onchange = syncPreviewSize;
+  $('aspect').onchange = $('quality').onchange = syncPreviewSize;
   $('play').onclick = () => { state.playing = !state.playing; $('play').textContent = state.playing ? '❚❚' : '▶'; };
   $('scrub').oninput = (e) => { state.playing = false; $('play').textContent = '▶'; state.t = e.target.value / 1000; };
   $('savePng').onclick = savePng;

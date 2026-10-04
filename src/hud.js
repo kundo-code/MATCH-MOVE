@@ -56,7 +56,7 @@ function countryLabels(ctx, info, u, route) {
   ctx.globalAlpha = 1;
 }
 
-function callout(ctx, pt, u, { color, tag, name, sub, dir = 1, big = 1, alpha = 1 }) {
+function callout(ctx, pt, u, { maxY, color, tag, name, sub, dir = 1, big = 1, alpha = 1 }) {
   if (!pt.visible || alpha <= 0.01) return;
   ctx.save();
   ctx.globalAlpha = alpha;
@@ -72,7 +72,7 @@ function callout(ctx, pt, u, { color, tag, name, sub, dir = 1, big = 1, alpha = 
   let x = pt.x + dir * 40 * u * big - (dir < 0 ? w : 0);
   let y = pt.y - lift - h;
   x = clamp(x, 12 * u, ctx.canvas.width - w - 12 * u);
-  y = clamp(y, 12 * u, ctx.canvas.height - h - 12 * u);
+  y = clamp(y, 12 * u, (maxY ?? ctx.canvas.height) - h - 12 * u);
 
   ctx.strokeStyle = color;
   ctx.lineWidth = 2 * u;
@@ -114,22 +114,27 @@ export function drawHud(ctx, w, h, info, meta) {
 
   if (meta.showCountryLabels !== false) countryLabels(ctx, info, u, meta.routeCountries);
 
+  const m = 36 * u;
+  const cardH = (portrait ? 330 : 214) * u;
+  const cy = h - m - cardH;
+
   // 공항 콜아웃: 도착지는 줌인할수록 커진다
   const z = info.zoom;
   const oDir = portrait ? -1 : -1, dDir = 1;
   callout(ctx, info.origin, u, {
+    maxY: cy,
     color: '#4ade80', tag: '출발 · DEPARTURE', dir: oDir,
     name: `${meta.origin.ko || meta.origin.en}`, sub: `${meta.originCountry.ko} · ${meta.origin.iata}`,
     alpha: intro * (1 - smooth((z - 0.2) / 0.5) * 0.9),
   });
   callout(ctx, info.dest, u, {
+    maxY: cy,
     color: '#ffb020', tag: '도착 · ARRIVAL', dir: dDir, big: 1 + 0.25 * z,
     name: `${meta.dest.ko || meta.dest.en}`, sub: `${meta.destCountry.ko} · ${meta.dest.iata}`,
     alpha: intro,
   });
 
   // ── 상단: 항공사 + 노선 ──────────────────────────────────────────────
-  const m = 36 * u;
   const topW = portrait ? w - m * 2 : 560 * u, topH = 108 * u;
   ctx.globalAlpha = intro;
   glass(ctx, m, m, topW, topH, 18 * u, 0.62);
@@ -141,8 +146,7 @@ export function drawHud(ctx, w, h, info, meta) {
 
   // ── 하단: 노선 정보 카드 (항상 표시) ────────────────────────────────
   const cardW = portrait ? w - m * 2 : Math.min(1180 * u, w - m * 2);
-  const cardH = (portrait ? 330 : 214) * u;
-  const cx = m, cy = h - m - cardH;
+  const cx = m;
   glass(ctx, cx, cy, cardW, cardH, 22 * u, 0.7);
   const colW = portrait ? cardW : (cardW - 40 * u) / 2;
 

@@ -337,7 +337,7 @@ export class GlobeScene {
     const psiFit = this.#fitHeading(aspect);
 
     // 경로 전체가 한 화면에 들어오는 거리
-    const need = (this.chord * 1.7) / 2;
+    const need = (this.chord * (aspect < 1 ? 2.0 : 1.7)) / 2;
     const dFit = clamp(
       aspect >= 1 ? need / (TAN_HALF * aspect) : (need * Math.cos(tiltFit * D2R)) / TAN_HALF,
       0.1, 2.4,
@@ -385,6 +385,8 @@ export class GlobeScene {
     cam.up.copy(head);
     cam.lookAt(st.C);
     const height = Math.max(1e-4, cam.position.length() - 1);
+    // 하단 정보 카드에 가리지 않도록 장면을 위로 살짝 올린다
+    cam.setViewOffset(w, h, 0, Math.round(h * (w < h ? 0.09 : 0.035)), w, h);
     cam.near = Math.max(0.0008, Math.min(0.5, height * 0.25));
     cam.far = 120;
     cam.updateProjectionMatrix();
