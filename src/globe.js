@@ -203,7 +203,8 @@ export class GlobeScene {
     // 기체는 붉은 타겟(renderOrder 9)보다 나중에 그려 항상 타겟 위에 보이게 한다 (재질을 반투명 패스로)
     this.plane = buildPlane(livery);
     this.plane.traverse((o) => { if (o.material) { for (const m of [].concat(o.material)) m.transparent = true; } });
-    this.plane.renderOrder = 20;
+    // 날개·엔진·기어는 하위 Group이라 각각 renderOrder를 지정해야 타겟(9) 뒤에 그려진다
+    this.plane.traverse((o) => { if (o.isGroup) o.renderOrder = 20; });
     this.dynamic.add(this.plane);
 
     // 출발·도착 지점의 붉은 타겟 (카메라를 향하는 원형, 화면상 크기 일정)
@@ -377,11 +378,28 @@ export class GlobeScene {
       const mid = slerpV(planePos, this.B, 0.5);
       C = slerpV(C, mid, smooth(z / 0.35));
       const rem = planePos.distanceTo(this.B);
-      const keepBoth = rem * (aspect >= 1 ? 1.55 : 2.3);
+      const keepBoth = rem * (aspect >= 1 ? 2.1 : 3.0); // 하단 정보 카드와 겹치지 않도록 여유
       dist = Math.max(Math.exp(lerp(Math.log(dist), Math.log(dEnd), z)), Math.min(dist, keepBoth));
       tilt = lerp(tilt, 52, z);
-      // 정면 뒤가 아니라 비스듬히 보면 기체가 훨씬 잘 보인다
-      psi = lerpAngle(psi, (arriveBearing - 42 + 360) % 360, z);
+
+      // 도착 연출 방향 (대한민국 출발 기준 지도 화면):
+      //  · 도착지가 서쪽(좌측·좌하단)이면 비행기가 화면 우상단 → 좌하단으로 들어와 착륙
+      //  · 도착지가 동쪽(우측·우하단)이면 비행기가 화면 좌상단 → 우하단으로 들어와 착륙
+      // 화면 위쪽이 가리키는 방위(psi)를 비행 방위에서 135°/225° 돌려 맞춘다.
+      const westbound = Math.sin(this.routeBearing * D2R) < 0;
+      const psiEnd = (arriveBearing - (westbound ? 225 : 135) + 720) % 360;
+      psi = lerpAngle(psi, psiEnd, z);
+
+      // 도착 공항이 화면 중앙이 아니라 진행 방향 쪽 아래 구석에 놓이도록 카메라 중심을 반대편(위·안쪽)으로 비켜 둔다
+      const { n, e } = localFrame(C);
+      const ps = psi * D2R;
+      const head = n.clone().multiplyScalar(Math.cos(ps)).addScaledVector(e, Math.sin(ps));
+      const right = new THREE.Vector3().crossVectors(head, C).normalize();
+      const unit = dist * 2 * TAN_HALF * z * z;
+      C = C.clone()
+        .addScaledVector(right, (westbound ? 0.2 : -0.2) * unit * aspect / 1.78)
+        .addScaledVector(head, 0.07 * unit)
+        .normalize();
     }
     return { C, dist, tilt, psi, z, p, s };
   }
