@@ -1,0 +1,289 @@
+import { GlobeScene } from './globe.js';
+import { drawHud, FONT } from './hud.js';
+import { AIRLINES, DEFAULT_AIRLINE } from './data/airlines.js';
+import { greatCircleKm, estimateFlightMinutes, formatDuration } from './flight.js';
+import { exportMp4, canvasToPng, downloadBlob, supportsMp4Export } from './exporter.js';
+
+const $ = (id) => document.getElementById(id);
+const DEFAULT_ORIGIN = 'ICN-T1';
+const DEFAULT_DEST = 'NRT';
+
+const state = {
+  airline: DEFAULT_AIRLINE,
+  originId: DEFAULT_ORIGIN,
+  regionId: 'east-asia',
+  destId: DEFAULT_DEST,
+  duration: 15,
+  playing: true,
+  t: 0,
+  exporting: false,
+};
+
+let data, scene, hudCtx;
+const stage = $('stage'), glCanvas = $('gl'), hudCanvas = $('hud');
+
+// ── 데이터/UI 구성 ───────────────────────────────────────────────────
+function airlineOf() { return AIRLINES.find((a) => a.id === state.airline); }
+function originOf() { return data.origins.find((a) => a.id === state.originId); }
+function destOf() { return data.destinations.find((a) => a.id === state.destId); }
+
+function buildAirlineChips() {
+  const box = $('airlines');
+  box.innerHTML = '';
+  for (const a of AIRLINES) {
+    const b = document.createElement('button');
+    b.className = 'chip';
+    b.type = 'button';
+    b.innerHTML = `<i style="background:${a.route}"></i>${a.ko}`;
+    b.setAttribute('aria-pressed', a.id === state.airline);
+    b.onclick = () => { state.airline = a.id; buildAirlineChips(); applyFlight(); };
+    box.appendChild(b);
+  }
+}
+
+function buildOrigins() {
+  const sel = $('origin');
+  sel.innerHTML = data.origins.map((o) => `<option value="${o.id}">${o.ko} (${o.iata})</option>`).join('');
+  sel.value = state.originId;
+  sel.onchange = () => { state.originId = sel.value; applyFlight(); };
+}
+
+function buildRegions() {
+  const box = $('regions');
+  box.innerHTML = '';
+  for (const r of data.regions) {
+    const b = document.createElement('button');
+    b.className = 'chip';
+    b.type = 'button';
+    b.textContent = r.ko;
+    b.setAttribute('aria-pressed', r.id === state.regionId);
+    b.onclick = () => {
+      state.regionId = r.id;
+      const first = destinationsInRegion().find((a) => a.rank === 0) || destinationsInRegion()[0];
+      state.destId = first.id;
+      buildRegions(); buildDestinations(); applyFlight();
+    };
+    box.appendChild(b);
+  }
+}
+
+function destinationsInRegion() {
+  const region = data.regions.find((r) => r.id === state.regionId);
+  const set = new Set(region.countries.map((c) => c.code));
+  return data.destinations.filter((a) => set.has(a.country));
+}
+
+function buildDestinations() {
+  const q = $('search').value.trim().toLowerCase();
+  const region = data.regions.find((r) => r.id === state.regionId);
+  const list = destinationsInRegion().filter((a) => !q || [a.iata, a.icao, a.en, a.ko, a.city, data.countryNames[a.country].ko].join(' ').toLowerCase().includes(q));
+  const sel = $('dest');
+  sel.innerHTML = '';
+  for (const c of region.countries) {
+    const items = list.filter((a) => a.country === c.code);
+    if (!items.length) continue;
+    const g = document.createElement('optgroup');
+    g.label = `${c.ko} (${c.en})`;
+    for (const a of items) {
+      const o = document.createElement('option');
+      o.value = a.id;
+      o.textContent = `${a.ko || a.en} · ${a.iata}`;
+      g.appendChild(o);
+    }
+    sel.appendChild(g);
+  }
+  sel.value = state.destId;
+  sel.onchange = () => { state.destId = sel.value; applyFlight(); };
+}
+
+// ── 비행 정보 계산 ────────────────────────────────────────────────────
+function flightMeta() {
+  const o = originOf(), d = destOf(), airline = airlineOf();
+  const distanceKm = greatCircleKm(o, d);
+  const outAuto = estimateFlightMinutes(o, d), backAuto = estimateFlightMinutes(d, o);
+  const outManual = parseInt($('outMin').value, 10), backManual = parseInt($('backMin').value, 10);
+  return {
+    airline, origin: o, dest: d,
+    originCountry: data.countryNames[o.country], destCountry: data.countryNames[d.country],
+    distanceKm, outAuto, backAuto,
+    outMin: outManual > 0 ? outManual : outAuto,
+    backMin: backManual > 0 ? backManual : backAuto,
+    routeColor: airline.route,
+    routeCountries: new Set([o.country, d.country]),
+    showCountryLabels: $('optCountries').checked,
+    tilesActive: false,
+  };
+}
+
+let meta;
+function refreshMeta() {
+  meta = flightMeta();
+  $('outAuto').textContent = formatDuration(meta.outAuto);
+  $('backAuto').textContent = formatDuration(meta.backAuto);
+  meta.tilesActive = scene?.hasTiles && $('optHd').checked;
+}
+
+function applyFlight() {
+  const o = originOf(), d = destOf(), a = airlineOf();
+  refreshMeta();
+  scene.setFlight({ origin: o, dest: d, livery: a, routeColor: a.route });
+  const badge = $('tilesBadge');
+  badge.hidden = !$('optHd').checked;
+  badge.textContent = '고해상도 위성 타일 불러오는 중…';
+  scene.tilesPromise.then((n) => {
+    refreshMeta();
+    badge.textContent = n ? '고해상도 위성 타일 적용됨' : '고해상도 타일 없음 (오프라인) · 기본 지구 텍스처 사용';
+    setTimeout(() => { badge.hidden = true; }, 3500);
+  });
+}
+
+// ── 프레임 합성 ───────────────────────────────────────────────────────
+function syncPreviewSize() {
+  const [w, h] = $('resolution').value.split('x').map(Number);
+  stage.style.setProperty('--ar', w / h);
+  stage.style.aspectRatio = `${w} / ${h}`;
+  const rect = stage.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const pw = Math.max(320, Math.round(rect.width * dpr)), ph = Math.max(180, Math.round(pw * (h / w)));
+  hudCanvas.width = pw; hudCanvas.height = ph;
+  scene.resize(pw, ph);
+}
+
+function renderPreview() {
+  const info = scene.renderAt(state.t, state.t * state.duration);
+  drawHud(hudCtx, hudCanvas.width, hudCanvas.height, info, meta);
+  const total = state.duration, cur = state.t * total;
+  $('clock').textContent = `${fmt(cur)} / ${fmt(total)}`;
+  $('scrub').value = Math.round(state.t * 1000);
+}
+const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+
+let last = performance.now();
+function loop(now) {
+  const dt = (now - last) / 1000;
+  last = now;
+  if (!state.exporting) {
+    if (state.playing) {
+      state.t += dt / state.duration;
+      if (state.t >= 1.12) state.t = 0; // 마지막 장면을 잠시 보여준 뒤 반복
+    }
+    state.t = Math.min(state.t, 1);
+    renderPreview();
+  }
+  requestAnimationFrame(loop);
+}
+
+/** 지정 해상도로 한 프레임(3D + HUD)을 합성한 캔버스를 반환 */
+function makeComposer(W, H) {
+  const out = document.createElement('canvas');
+  out.width = W; out.height = H;
+  const ctx = out.getContext('2d');
+  return (t, seconds) => {
+    scene.resize(W, H);
+    const info = scene.renderAt(t, seconds);
+    ctx.drawImage(glCanvas, 0, 0, W, H);
+    drawHud(ctx, W, H, info, meta);
+    return out;
+  };
+}
+
+async function ensureAssets() {
+  await Promise.all([
+    scene.ready,
+    scene.options.hdTiles ? scene.tilesPromise : null,
+    ...['400', '500', '700', '900'].map((w) => document.fonts.load(`${w} 24px "Noto Sans KR"`).catch(() => {})),
+  ]);
+  await document.fonts.ready;
+  refreshMeta();
+}
+
+const stamp = () => new Date().toISOString().replace(/[-:T]/g, '').slice(0, 12);
+const baseName = () => `${meta.airline.id}_${meta.origin.iata}-${meta.dest.iata}_${stamp()}`;
+
+async function savePng() {
+  const [W, H] = $('resolution').value.split('x').map(Number);
+  setBusy(true, '이미지 생성 중…');
+  try {
+    await ensureAssets();
+    const compose = makeComposer(W, H);
+    const canvas = compose(state.t, state.t * state.duration);
+    downloadBlob(await canvasToPng(canvas), `${baseName()}.png`);
+  } finally { setBusy(false); syncPreviewSize(); }
+}
+
+let abort = null;
+async function saveMp4() {
+  const [W, H] = $('resolution').value.split('x').map(Number);
+  const fps = +$('fps').value, targetMB = +$('targetMB').value || 50;
+  abort = new AbortController();
+  setBusy(true, '에셋 준비 중…');
+  state.exporting = true;
+  $('progress').hidden = false;
+  try {
+    await ensureAssets();
+    const compose = makeComposer(W, H);
+    const t0 = performance.now();
+    const { blob, codec } = await exportMp4({
+      renderFrame: (t) => compose(t, t * state.duration),
+      width: W, height: H, fps, durationSec: state.duration, targetMB, signal: abort.signal,
+      onProgress: ({ done, total, eta }) => {
+        $('progressBar').style.width = `${(done / total) * 100}%`;
+        $('progressText').textContent = `인코딩 ${done}/${total} 프레임 · 남은 시간 약 ${Math.ceil(eta)}초`;
+      },
+    });
+    downloadBlob(blob, `${baseName()}.mp4`);
+    const sec = Math.round((performance.now() - t0) / 1000);
+    $('exportNote').textContent = `저장 완료: ${(blob.size / 1024 / 1024).toFixed(1)} MB · ${W}×${H} · ${fps}fps · ${codec} · 소요 ${sec}초`;
+  } catch (e) {
+    $('exportNote').textContent = e.name === 'AbortError' ? '영상 저장을 취소했습니다.' : `영상 저장 실패: ${e.message}`;
+    console.error(e);
+  } finally {
+    state.exporting = false;
+    $('progress').hidden = true;
+    setBusy(false);
+    syncPreviewSize();
+  }
+}
+
+function setBusy(busy, msg) {
+  $('savePng').disabled = $('saveMp4').disabled = busy;
+  if (msg) $('exportNote').textContent = msg;
+}
+
+// ── 시작 ──────────────────────────────────────────────────────────────
+async function init() {
+  data = await (await fetch('data/airports.json')).json();
+  scene = new GlobeScene(glCanvas);
+  hudCtx = hudCanvas.getContext('2d');
+  window.__app = { scene, state, get meta() { return meta; }, compose: (W, H) => makeComposer(W, H), ensureAssets };
+
+  buildAirlineChips(); buildOrigins(); buildRegions(); buildDestinations();
+  syncPreviewSize();
+  await scene.ready;
+  applyFlight();
+  $('loading').hidden = true;
+
+  const reflow = () => { refreshMeta(); };
+  ['outMin', 'backMin'].forEach((id) => $(id).addEventListener('input', reflow));
+  $('search').addEventListener('input', buildDestinations);
+  $('optBorders').onchange = (e) => scene.setOptions({ borders: e.target.checked });
+  $('optClouds').onchange = (e) => scene.setOptions({ clouds: e.target.checked });
+  $('optCountries').onchange = (e) => { scene.setOptions({ countryLabels: e.target.checked }); refreshMeta(); };
+  $('optHd').onchange = (e) => { scene.setOptions({ hdTiles: e.target.checked }); refreshMeta(); };
+  $('duration').oninput = (e) => { state.duration = +e.target.value; $('durationOut').textContent = `${state.duration}초`; };
+  $('resolution').onchange = syncPreviewSize;
+  $('play').onclick = () => { state.playing = !state.playing; $('play').textContent = state.playing ? '❚❚' : '▶'; };
+  $('scrub').oninput = (e) => { state.playing = false; $('play').textContent = '▶'; state.t = e.target.value / 1000; };
+  $('savePng').onclick = savePng;
+  $('saveMp4').onclick = saveMp4;
+  $('cancel').onclick = () => abort?.abort();
+  window.addEventListener('resize', () => { if (!state.exporting) syncPreviewSize(); });
+  if (!supportsMp4Export()) {
+    $('saveMp4').disabled = true;
+    $('exportNote').textContent = '이 브라우저는 MP4 인코딩(WebCodecs)을 지원하지 않습니다. 최신 Chrome/Edge를 사용해 주세요. (이미지 저장은 가능)';
+  }
+  document.fonts?.load(`700 20px ${FONT}`);
+  requestAnimationFrame(loop);
+}
+
+init().catch((e) => { $('loading').textContent = `초기화 실패: ${e.message}`; console.error(e); });

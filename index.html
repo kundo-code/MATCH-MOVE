@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MATCH-MOVE · 비행 경로 영상 제작기</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="panel">
+      <header>
+        <h1>MATCH-MOVE</h1>
+        <p>출발·도착 공항을 위성지도에 표시하고 비행 영상을 만듭니다</p>
+      </header>
+
+      <section>
+        <h2>1. 항공사</h2>
+        <div id="airlines" class="chips airlines"></div>
+      </section>
+
+      <section>
+        <h2>2. 출발 공항 <small>대한민국</small></h2>
+        <select id="origin"></select>
+      </section>
+
+      <section>
+        <h2>3. 도착 공항</h2>
+        <div id="regions" class="chips"></div>
+        <input id="search" type="search" placeholder="공항·도시·IATA 코드 검색 (예: 도쿄, NRT)" />
+        <select id="dest" size="9"></select>
+      </section>
+
+      <section>
+        <h2>4. 비행시간 <small>자동 추정 · 직접 입력 가능</small></h2>
+        <div class="times">
+          <label>가는 편 <output id="outAuto"></output><input id="outMin" type="number" min="1" placeholder="분" /></label>
+          <label>오는 편 <output id="backAuto"></output><input id="backMin" type="number" min="1" placeholder="분" /></label>
+        </div>
+        <p class="hint">제트기류(서→동)를 반영한 추정치라 가는 편과 오는 편이 다릅니다. 실제 시간표 값이 있으면 분 단위로 입력하세요.</p>
+      </section>
+
+      <section>
+        <h2>5. 표시 옵션</h2>
+        <label class="check"><input type="checkbox" id="optBorders" checked /> 국경선 (GeoJSON)</label>
+        <label class="check"><input type="checkbox" id="optCountries" checked /> 국가명 라벨</label>
+        <label class="check"><input type="checkbox" id="optClouds" checked /> 구름</label>
+        <label class="check"><input type="checkbox" id="optHd" checked /> 공항 주변 고해상도 위성 타일 <small>(Esri, 온라인)</small></label>
+      </section>
+
+      <section>
+        <h2>6. 출력</h2>
+        <div class="grid2">
+          <label>화면 비율·해상도
+            <select id="resolution">
+              <option value="1920x1080" selected>가로 1080p (1920×1080)</option>
+              <option value="2560x1440">가로 1440p (2560×1440)</option>
+              <option value="3840x2160">가로 4K (3840×2160)</option>
+              <option value="1080x1920">세로 (1080×1920)</option>
+              <option value="1080x1080">정사각 (1080×1080)</option>
+            </select>
+          </label>
+          <label>프레임
+            <select id="fps"><option value="30" selected>30 fps</option><option value="60">60 fps</option></select>
+          </label>
+          <label>영상 길이 <output id="durationOut">15초</output>
+            <input id="duration" type="range" min="8" max="40" step="1" value="15" />
+          </label>
+          <label>목표 용량 (MB)
+            <input id="targetMB" type="number" min="5" max="500" value="50" />
+          </label>
+        </div>
+        <div class="actions">
+          <button id="savePng" class="btn">이미지 저장 (PNG)</button>
+          <button id="saveMp4" class="btn primary">영상 저장 (MP4)</button>
+        </div>
+        <div id="progress" class="progress" hidden>
+          <div class="bar"><i id="progressBar"></i></div>
+          <div class="row"><span id="progressText"></span><button id="cancel" class="link">취소</button></div>
+        </div>
+        <p id="exportNote" class="hint"></p>
+      </section>
+    </aside>
+
+    <main class="stage-wrap">
+      <div id="stage" class="stage">
+        <canvas id="gl"></canvas>
+        <canvas id="hud"></canvas>
+        <div id="loading" class="loading">지구 텍스처 불러오는 중…</div>
+        <div id="tilesBadge" class="badge" hidden></div>
+      </div>
+      <div class="transport">
+        <button id="play" class="btn icon" aria-label="재생/일시정지">❚❚</button>
+        <input id="scrub" type="range" min="0" max="1000" value="0" />
+        <span id="clock">0:00 / 0:15</span>
+      </div>
+    </main>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
