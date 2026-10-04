@@ -19,7 +19,7 @@ const state = {
   regionId: 'east-asia',
   countryId: 'JP',
   destId: DEFAULT_DEST,
-  duration: 15,
+  duration: 8,
   playing: true,
   t: 0,
   exporting: false,
@@ -377,6 +377,7 @@ function wirePointOptions() {
   bind('optDestTarget', 'destTarget');
   bind('optOriginBox');
   bind('optDestBox');
+  $('startView').onchange = () => scene.setOptions({ startView: $('startView').value });
   $('depth').oninput = (e) => {
     $('depthOut').textContent = `${e.target.value}%`;
     scene.setOptions({ depth: +e.target.value / 100 });

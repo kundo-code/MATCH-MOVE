@@ -70,6 +70,13 @@
 
         <div class="optgroup">
           <h3>지도 시점</h3>
+          <label class="zoomrow">시작 화면
+            <select id="startView">
+              <option value="auto" selected>자동 (동남아시아는 아시아 전체가 보이는 넓은 화면)</option>
+              <option value="fit">경로에 딱 맞춤</option>
+              <option value="wide">항상 넓게 (아시아 전체)</option>
+            </select>
+          </label>
           <label class="zoomrow">확대/축소 <output id="mapZoomOut">100%</output>
             <input id="mapZoom" type="range" min="40" max="300" step="1" value="100" />
           </label>
@@ -85,9 +92,9 @@
 
         <div class="optgroup">
           <h3>입체감 · 조명</h3>
-          <label class="zoomrow">입체감 강도 <output id="depthOut">60%</output>
-            <input id="depth" type="range" min="0" max="100" step="1" value="60" />
-            <small>측면 조명과 지형 요철로 지구에 명암을 줍니다. 0%면 평평한 조명입니다.</small>
+          <label class="zoomrow">입체감 강도 <output id="depthOut">70%</output>
+            <input id="depth" type="range" min="0" max="100" step="1" value="70" />
+            <small>측면 조명, 지형 노멀맵(돌출감), 비행기 금속 반사로 입체감을 줍니다. 0%면 평평한 조명입니다.</small>
           </label>
           <label class="check"><input type="checkbox" id="optShadow" checked /> 비행기 그림자</label>
         </div>
@@ -122,8 +129,8 @@
           <label>프레임
             <select id="fps"><option value="30" selected>30 fps</option><option value="60">60 fps</option></select>
           </label>
-          <label>영상 길이 <output id="durationOut">15초</output>
-            <input id="duration" type="range" min="8" max="40" step="1" value="15" />
+          <label>영상 길이 <output id="durationOut">8초</output>
+            <input id="duration" type="range" min="8" max="40" step="1" value="8" />
           </label>
           <label>목표 용량 (MB)
             <input id="targetMB" type="number" min="5" max="500" value="50" />

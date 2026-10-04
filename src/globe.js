@@ -6,6 +6,7 @@ import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeome
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { latLonToVec, buildFlightPath, buildGroundTrack, bearingDeg, greatCircleKm, GROUND_R } from './flight.js';
 import { buildPlane, buildShadow } from './plane.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { buildAirportPatches } from './satellite.js';
 
 const D2R = Math.PI / 180;
@@ -60,10 +61,51 @@ export class GlobeScene {
     this.maxAniso = this.renderer.capabilities.getMaxAnisotropy();
     this.flight = null;
     this.patches = new Map();
-    this.options = { borders: true, clouds: true, hdTiles: true, countryLabels: true, originTarget: true, destTarget: true, cardShown: true, mapZoom: 1, mapRotate: 0, mapTilt: 38, panX: 0, panY: 0, planeSize: 1, globeIntro: false, depth: 0.6, planeShadow: true, duration: 15, wideStart: false };
+    this.options = { borders: true, clouds: true, hdTiles: true, countryLabels: true, originTarget: true, destTarget: true, cardShown: true, mapZoom: 1, mapRotate: 0, mapTilt: 38, panX: 0, panY: 0, planeSize: 1, globeIntro: false, depth: 0.7, planeShadow: true, duration: 8, wideStart: false, startView: 'auto' };
     this.size = { w: 1280, h: 720 };
     this.tmpCam = new THREE.PerspectiveCamera(VFOV, 16 / 9, 0.001, 100);
+    // 기체에 금속 반사·하이라이트를 주는 환경 맵 (스튜디오 조명)
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    this.envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    pmrem.dispose();
     this.#buildStatic();
+  }
+
+  /** 고도 맵(2048×1024) → 4096×2048 탄젠트 공간 노멀맵. 위도가 높을수록 가로 픽셀이 좁아지므로 경사를 보정한다 */
+  #buildGlobalNormal(topo) {
+    const W = 4096, H = 2048;
+    const c = document.createElement('canvas');
+    c.width = W; c.height = H;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.filter = 'blur(1.4px)'; // 업스케일 계단을 풀어 부드러운 경사로
+    ctx.drawImage(topo.image, 0, 0, W, H);
+    const src = ctx.getImageData(0, 0, W, H).data;
+    const h = new Float32Array(W * H);
+    for (let i = 0; i < W * H; i++) h[i] = src[i * 4];
+    const img = ctx.createImageData(W, H);
+    const K = 0.2;
+    for (let y = 0; y < H; y++) {
+      const lat = (0.5 - (y + 0.5) / H) * Math.PI;
+      const kx = K / Math.max(0.25, Math.cos(lat));
+      const y0 = Math.max(0, y - 1) * W, y1 = Math.min(H - 1, y + 1) * W, row = y * W;
+      for (let x = 0; x < W; x++) {
+        const xl = x === 0 ? W - 1 : x - 1, xr = x === W - 1 ? 0 : x + 1;
+        const gx = (h[row + xr] - h[row + xl]) * 0.5, gy = (h[y1 + x] - h[y0 + x]) * 0.5;
+        let nx = -gx * kx, ny = gy * K;
+        const l = Math.hypot(nx, ny, 1);
+        nx /= l; ny /= l;
+        const o = (row + x) * 4;
+        img.data[o] = (nx * 0.5 + 0.5) * 255;
+        img.data[o + 1] = (ny * 0.5 + 0.5) * 255;
+        img.data[o + 2] = (1 / l * 0.5 + 0.5) * 255;
+        img.data[o + 3] = 255;
+      }
+    }
+    ctx.filter = 'none';
+    ctx.putImageData(img, 0, 0);
+    return new THREE.CanvasTexture(c);
   }
 
   #buildStatic() {
@@ -76,7 +118,8 @@ export class GlobeScene {
         earth.anisotropy = this.maxAniso;
         clouds.colorSpace = THREE.SRGBColorSpace;
         this.earthMat.map = earth;
-        this.earthMat.bumpMap = topo;
+        this.earthMat.normalMap = this.#buildGlobalNormal(topo);
+        this.earthMat.normalMap.anisotropy = this.maxAniso;
         this.earthMat.specularMap = water;
         this.earthMat.needsUpdate = true;
         this.cloudMat.map = clouds;
@@ -85,7 +128,7 @@ export class GlobeScene {
         this.#buildBorders(geo);
       });
 
-    this.earthMat = new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 45, specular: 0x333b44, bumpScale: 3, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+    this.earthMat = new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 45, specular: 0x333b44, normalScale: new THREE.Vector2(1, 1), polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
     this.earth = new THREE.Mesh(new THREE.SphereGeometry(1, 128, 96), this.earthMat);
     scene.add(this.earth);
 
@@ -203,6 +246,13 @@ export class GlobeScene {
     this.plane.traverse((o) => { if (o.material) { for (const m of [].concat(o.material)) m.transparent = true; } });
     // 날개·엔진·기어는 하위 Group이라 각각 renderOrder를 지정해야 타겟(9) 뒤에 그려진다
     this.plane.traverse((o) => { if (o.isGroup) o.renderOrder = 20; });
+    // 환경 반사(금속 느낌)와 명암 대비를 입체감 강도에 맞춰 조절하기 위해 재질을 모아 둔다
+    this.planeMats = [];
+    this.plane.traverse((o) => {
+      for (const m of [].concat(o.material || [])) {
+        if (m.isMeshStandardMaterial) { m.envMap = this.envTex; this.planeMats.push({ m, emissive: m.emissiveIntensity }); }
+      }
+    });
     this.dynamic.add(this.plane);
     this.shadow = buildShadow();
     this.shadow.renderOrder = 6;
@@ -245,9 +295,9 @@ export class GlobeScene {
     this.scene.add(this.patchGroup);
     const f = this.flight;
     const group = this.patchGroup;
-    const jobs = [f.origin, f.dest].map(async (ap) => {
-      const key = `${ap.lat},${ap.lon}`;
-      if (!this.patches.has(key)) this.patches.set(key, buildAirportPatches(ap.lat, ap.lon, this.maxAniso).catch(() => []));
+    const jobs = [[f.origin, 'origin'], [f.dest, 'dest']].map(async ([ap, role]) => {
+      const key = `${role}:${ap.lat},${ap.lon}`;
+      if (!this.patches.has(key)) this.patches.set(key, buildAirportPatches(ap.lat, ap.lon, this.maxAniso, role).catch(() => []));
       return this.patches.get(key);
     });
     this.tilesStatus = 'loading';
@@ -278,8 +328,8 @@ export class GlobeScene {
 
   // ── 타임라인 ────────────────────────────────────────────────────────
   /** 지구 전체 인트로를 쓰면 이륙이 늦게, 아니면 설정한 지도 범위에서 곧바로 시작 */
-  /** 도착(정지) 시점: 기존(0.95)보다 영상 길이 기준 1초 앞당겼다 */
-  #flyEnd() { return clamp(TIMELINE.flyEnd - 1 / Math.max(4, this.options.duration), 0.55, TIMELINE.flyEnd); }
+  /** 도착(정지) 시점: 영상 길이에 맞춘다 (끝 5%는 도착 장면 유지) */
+  #flyEnd() { return TIMELINE.flyEnd; }
 
   #flyStart() { return this.options.globeIntro ? TIMELINE.flyStart : 0.06; }
 
@@ -361,7 +411,10 @@ export class GlobeScene {
     // 사용자가 지정한 지도 확대/축소 배율(mapZoom, 1 = 두 공항이 딱 들어오는 크기)
     const dFitRaw = Math.max((ex * margin) / (TAN_HALF * aspect), (ey * margin) / TAN_HALF, 0.02);
     // 동남아시아는 아시아 전체가 보이는 넓은 화면에서 시작 (거리가 가까울수록 조금 더 확대)
-    const wideCtx = this.options.wideStart ? 0.62 + 0.62 * this.chord : 0;
+    // 첨부 이미지(지구 윤곽이 거의 다 보이는 화면) 기준: 쿠알라룸푸르(chord 0.71)에서 카메라 거리 ≈ 1.45
+    const sv = this.options.startView;
+    const wide = sv === 'wide' || (sv === 'auto' && this.options.wideStart);
+    const wideCtx = wide ? 0.78 + 0.95 * this.chord : 0;
     const dFit = clamp(Math.max(dFitRaw, wideCtx) / this.options.mapZoom, 0.03, 3.2);
     // 기본: 사용자가 설정한 지도 범위(dFit)에서 바로 시작. 인트로 옵션을 켜면 지구 전체에서 내려온다
     const dOver = this.options.globeIntro ? Math.max(2.5, dFit * 1.5) : dFit;
@@ -489,7 +542,14 @@ export class GlobeScene {
     this.sun.target.position.copy(st.C);
     this.sun.intensity = lerp(2.4, 3.5, dp);
     this.ambient.intensity = lerp(0.9, 0.5, dp);
-    this.earthMat.bumpScale = 0.6 + 7 * dp;
+    const ns = 0.25 + 1.55 * dp; // 지형 노멀맵 강도
+    this.earthMat.normalScale.set(ns, ns);
+    if (this.patchGroup) for (const m of this.patchGroup.children) if (m.userData.hasNormal) m.material.normalScale.set(ns * 0.9, ns * 0.9);
+    // 비행기: 입체감이 클수록 환경 반사는 강하게, 평평하게 밝히던 자체발광은 줄여 명암을 만든다
+    for (const { m, emissive } of this.planeMats || []) {
+      m.envMapIntensity = lerp(0.15, 1.5, dp);
+      m.emissiveIntensity = emissive * lerp(1, 0.3, dp);
+    }
     // Phong 반사는 (shininess+2)/8 배로 증폭되므로 아주 작은 값이면 충분하다 (바다에만 은은한 윤기)
     this.earthMat.specular.setScalar(lerp(0, 0.014, dp));
     this.renderer.toneMappingExposure = lerp(1, 1.12, dp);

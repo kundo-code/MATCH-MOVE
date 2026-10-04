@@ -139,7 +139,7 @@ export function drawHud(ctx, w, h, info, meta) {
     alpha: intro * (1 - smooth((z - 0.2) / 0.5) * 0.9),
   });
   if (meta.showDestBox !== false) callout(ctx, info.dest, u, {
-    maxY: cy, scale: sc, gap: gapOf(meta.showDestTarget, z), color: '#ffb020', tag: '도착 · ARRIVAL', big: 1 + 0.15 * z,
+    maxY: cy, scale: Math.min(sc, 0.7), gap: gapOf(meta.showDestTarget, z), color: '#ffb020', tag: '도착 · ARRIVAL', // 도착 정보박스는 항상 70% 크기
     name: `${meta.dest.ko || meta.dest.en}`, sub: `${meta.destCountry.ko} · ${meta.dest.iata}`,
     alpha: intro,
   });
