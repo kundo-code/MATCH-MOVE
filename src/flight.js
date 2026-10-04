@@ -82,3 +82,43 @@ export function buildArc(from, to, { segments = 240, lift = 0.16, groundLift = 0
   }
   return pts;
 }
+
+const smoothstep = (t) => { t = Math.min(1, Math.max(0, t)); return t * t * (3 - 2 * t); };
+
+/**
+ * 이륙 → 순항 → 활주로 접근(글라이드) → 접지 → 지상 활주까지 포함한 비행경로.
+ * 구면 위 대권을 φ(라디안)로 샘플링하고, 고도는 양 끝에서 완만한 경사(약 3°)로 지면에 닿는다.
+ * 반환: { pts, theta(출발~도착 각거리), phi(활주 포함 총 각도), rollout, touchdownIndex }
+ */
+export function buildFlightPath(from, to, { segments = 480, lift = 0.12 } = {}) {
+  const a = latLonToVec(from.lat, from.lon), b = latLonToVec(to.lat, to.lon);
+  const theta = Math.acos(Math.min(1, Math.max(-1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2])));
+  const n = [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const nl = Math.hypot(...n) || 1;
+  const t0 = [(n[1] * a[2] - n[2] * a[1]) / nl, (n[2] * a[0] - n[0] * a[2]) / nl, (n[0] * a[1] - n[1] * a[0]) / nl];
+  const chord = 2 * Math.sin(theta / 2);
+  const rollout = Math.min(0.004, 0.03 * theta);
+  const total = theta + rollout;
+
+  const hc = chord * lift;            // 순항 고도
+  const xa = Math.min(0.02, 0.1 * theta); // 최종 접근 구간 길이
+  const ha = xa * 0.055;              // 접근 시작 고도 (경사각 약 3°)
+  const xd = 0.3 * theta;             // 순항 고도까지 오르내리는 구간
+  const ground = (x) => {
+    if (x <= 0) return 0;
+    if (x < xa) return ha * Math.pow(x / xa, 1.15);
+    if (x < xd) return ha + (hc - ha) * smoothstep((x - xa) / (xd - xa));
+    return hc;
+  };
+
+  const pts = [];
+  let touchdownIndex = 0;
+  for (let i = 0; i <= segments; i++) {
+    const phi = (i / segments) * total;
+    const h = phi >= theta ? 0 : Math.min(ground(phi), ground(theta - phi));
+    if (phi <= theta) touchdownIndex = i;
+    const c = Math.cos(phi), s = Math.sin(phi), r = 1 + h;
+    pts.push([(a[0] * c + t0[0] * s) * r, (a[1] * c + t0[1] * s) * r, (a[2] * c + t0[2] * s) * r]);
+  }
+  return { pts, theta, phi: total, rollout, touchdownIndex };
+}

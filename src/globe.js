@@ -4,7 +4,7 @@ import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
 import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
-import { latLonToVec, buildArc, bearingDeg, greatCircleKm } from './flight.js';
+import { latLonToVec, buildArc, buildFlightPath, bearingDeg, greatCircleKm } from './flight.js';
 import { buildAirportPatches } from './satellite.js';
 
 const D2R = Math.PI / 180;
@@ -17,7 +17,8 @@ const smoother = (t) => { t = clamp(t, 0, 1); return t * t * t * (t * (t * 6 - 1
 const lerpAngle = (a, b, t) => a + (((b - a + 540) % 360) - 180) * t;
 
 // 타임라인 구성 (0~1). 비행은 FLY_START~FLY_END, 줌인은 비행 진행률이 ZOOM_FROM을 넘는 시점부터.
-export const TIMELINE = { intro: 0.2, flyStart: 0.12, flyEnd: 0.92, zoomFrom: 0.68 };
+// touchdown은 비행 구간(flyStart~flyEnd) 중 90% 지점, 이후 지상 활주하며 정지.
+export const TIMELINE = { intro: 0.2, flyStart: 0.12, flyEnd: 0.95, zoomFrom: 0.68, touchdown: 0.9 };
 
 function rng(seed) {
   return () => {
@@ -102,7 +103,24 @@ function buildPlane(livery) {
     eng.translate(s * 0.17, -0.05, 0.03);
     g.add(new THREE.Mesh(eng, accent));
   }
-  g.traverse((o) => { o.castShadow = false; });
+  // 랜딩기어 (저고도에서만 표시)
+  const gear = new THREE.Group();
+  const darkMat = new THREE.MeshStandardMaterial({ color: 0x2a2f3a, roughness: 0.8 });
+  const gearAt = (x, z, len) => {
+    const leg = new THREE.CylinderGeometry(0.006, 0.006, len, 8);
+    leg.translate(x, -0.045 - len / 2, z);
+    gear.add(new THREE.Mesh(leg, darkMat));
+    const wheel = new THREE.CylinderGeometry(0.02, 0.02, 0.02, 14);
+    wheel.rotateZ(Math.PI / 2);
+    wheel.translate(x, -0.045 - len, z);
+    gear.add(new THREE.Mesh(wheel, darkMat));
+  };
+  gearAt(0, 0.3, 0.05);
+  gearAt(0.1, 0.0, 0.055);
+  gearAt(-0.1, 0.0, 0.055);
+  gear.visible = false;
+  g.add(gear);
+  g.userData.gear = gear;
   return g;
 }
 
@@ -117,7 +135,7 @@ export class GlobeScene {
     this.maxAniso = this.renderer.capabilities.getMaxAnisotropy();
     this.flight = null;
     this.patches = new Map();
-    this.options = { borders: true, clouds: true, hdTiles: true, countryLabels: true };
+    this.options = { borders: true, clouds: true, hdTiles: true, countryLabels: true, markers3d: false, cardShown: true };
     this.size = { w: 1280, h: 720 };
     this.#buildStatic();
   }
@@ -212,8 +230,13 @@ export class GlobeScene {
     this.chord = this.A.distanceTo(this.B);
     this.routeBearing = bearingDeg(origin, dest);
 
-    this.segments = 240;
-    this.arc = buildArc(origin, dest, { segments: this.segments, lift: 0.12, groundLift: 0.00006 });
+    const path = buildFlightPath(origin, dest, { segments: 480, lift: 0.12 });
+    this.arc = path.pts;
+    this.segments = path.pts.length - 1;
+    this.theta = path.theta;
+    this.pathPhi = path.phi;
+    this.rollout = path.rollout;
+    this.sTouch = path.theta / path.phi;
     const backArc = buildArc(dest, origin, { segments: 160, lift: 0.12, groundLift: 0.00006, offset: this.chord * 0.07 });
     const flat = (pts) => pts.flat();
 
@@ -298,10 +321,21 @@ export class GlobeScene {
   }
 
   // ── 타임라인 ────────────────────────────────────────────────────────
+  /** 시간 → 경로 진행률 s(0~1). 이륙 가속 → 순항 → 접지 후 감속 활주 */
   flightProgress(t) {
-    const { flyStart, flyEnd } = TIMELINE;
+    const { flyStart, flyEnd, touchdown } = TIMELINE;
     const p = clamp((t - flyStart) / (flyEnd - flyStart), 0, 1);
-    return 0.72 * p + 0.28 * (0.5 - 0.5 * Math.cos(Math.PI * p));
+    let phi;
+    if (p <= touchdown) {
+      const w = p / touchdown, a = 0.15;
+      // 속도: 0에서 부드럽게 가속해 순항속도 유지
+      const integral = w < a ? a * ((w / a) ** 3 - (w / a) ** 4 / 2) : a / 2 + (w - a);
+      phi = this.theta * (integral / (1 - a / 2));
+    } else {
+      const q = (p - touchdown) / (1 - touchdown);
+      phi = this.theta + this.rollout * (1 - (1 - q) ** 2);
+    }
+    return phi / this.pathPhi;
   }
 
   #pointAt(s) {
@@ -360,9 +394,11 @@ export class GlobeScene {
 
     // 3) 도착 직전 공항으로 줌인
     const z = smoother((p - zoomFrom) / (1 - zoomFrom));
-    const arriveBearing = this.#bearingOfTangent(this.#pointAt(1), this.#tangentAt(1));
+    const arriveBearing = this.#bearingOfTangent(this.#pointAt(this.sTouch), this.#tangentAt(this.sTouch));
+    // 접지점과 활주 종료점의 중간을 비춘다
+    const endTarget = this.#pointAt(this.sTouch + (1 - this.sTouch) * 0.45).normalize();
     if (z > 0) {
-      C = slerpV(C, this.B, z);
+      C = slerpV(C, endTarget, z);
       dist = Math.exp(lerp(Math.log(dist), Math.log(dEnd), z));
       tilt = lerp(tilt, 52, z);
       // 정면 뒤가 아니라 비스듬히 보면 기체가 훨씬 잘 보인다
@@ -386,7 +422,7 @@ export class GlobeScene {
     cam.lookAt(st.C);
     const height = Math.max(1e-4, cam.position.length() - 1);
     // 하단 정보 카드에 가리지 않도록 장면을 위로 살짝 올린다
-    cam.setViewOffset(w, h, 0, Math.round(h * (w < h ? 0.09 : 0.035)), w, h);
+    cam.setViewOffset(w, h, 0, this.options.cardShown ? Math.round(h * (w < h ? 0.09 : 0.035)) : 0, w, h);
     cam.near = Math.max(0.0008, Math.min(0.5, height * 0.25));
     cam.far = 120;
     cam.updateProjectionMatrix();
@@ -416,11 +452,15 @@ export class GlobeScene {
     const planePos = this.#pointAt(st.s);
     const tan = this.#tangentAt(st.s);
     const up = planePos.clone().normalize();
+    const pScale = Math.min(0.02, (0.07 + 0.05 * st.z) * st.dist);
+    const altitude = planePos.length() - 1;
+    // 바퀴가 지면에 닿도록 기체 중심을 바퀴 길이만큼 띄운다 (지상에서만 적용)
+    planePos.addScaledVector(up, 0.105 * pScale * (1 - smooth(altitude / (0.5 * pScale + 1e-6))));
+    this.plane.userData.gear.visible = altitude < 0.0025;
     const x = new THREE.Vector3().crossVectors(up, tan).normalize();
     const y = new THREE.Vector3().crossVectors(tan, x).normalize();
     this.plane.matrix.makeBasis(x, y, tan).setPosition(planePos);
     this.plane.matrixAutoUpdate = false;
-    const pScale = Math.min(0.02, (0.07 + 0.09 * st.z) * st.dist);
     this.plane.matrix.scale(new THREE.Vector3(pScale, pScale, pScale));
     this.plane.matrixWorldNeedsUpdate = true;
 
@@ -431,6 +471,7 @@ export class GlobeScene {
 
     // 마커 (거리에 비례한 크기 + 펄스)
     this.markers.forEach((g, i) => {
+      g.visible = this.options.markers3d;
       const base = Math.max(0.0012, Math.min(0.03, st.dist * 0.018));
       const ph = (seconds * 0.8 + i * 0.4) % 1;
       g.scale.setScalar(base);
@@ -449,7 +490,7 @@ export class GlobeScene {
       return { x: (q.x * 0.5 + 0.5) * w, y: (1 - (q.y * 0.5 + 0.5)) * h, visible: visible && q.z < 1 && q.z > -1 };
     };
     const info = {
-      t, p: st.p, zoom: st.z, dist: st.dist, height,
+      t, seconds, p: st.p, zoom: st.z, dist: st.dist, height,
       origin: project(this.A), dest: project(this.B),
       plane: project(planePos),
       countries: [],

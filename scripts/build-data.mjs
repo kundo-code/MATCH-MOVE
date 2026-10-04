@@ -4,7 +4,10 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AIRPORT_KO } from './airport-names-ko.mjs';
+import { AIRPORT_KO as BASE_KO } from './airport-names-ko.mjs';
+import { AIRPORT_KO_EXTRA } from './airport-names-ko-extra.mjs';
+
+const AIRPORT_KO = { ...BASE_KO, ...AIRPORT_KO_EXTRA };
 
 const AIRPORTS_URL = 'https://raw.githubusercontent.com/davidmegginson/ourairports-data/main/airports.csv';
 const COUNTRIES_URL = 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_countries.geojson';
@@ -84,7 +87,8 @@ for (const a of csv) {
     for (const t of terminals) airports.push({ ...base, id: t.id, ko: t.ko, en: t.en, lat: t.lat, lon: t.lon });
   } else airports.push({ ...base, id: a.iata_code });
 }
-airports.sort((a, b) => a.rank - b.rank || a.iata.localeCompare(b.iata));
+// 대형 공항 → 한국어명이 있는 공항 → IATA 순
+airports.sort((a, b) => a.rank - b.rank || (!a.ko - !b.ko) || a.iata.localeCompare(b.iata));
 
 const origins = airports.filter((a) => a.country === 'KR');
 const destinations = airports.filter((a) => a.country !== 'KR');

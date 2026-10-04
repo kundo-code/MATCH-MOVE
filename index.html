@@ -29,9 +29,12 @@
 
       <section>
         <h2>3. 도착 공항</h2>
-        <div id="regions" class="chips"></div>
-        <input id="search" type="search" placeholder="공항·도시·IATA 코드 검색 (예: 도쿄, NRT)" />
-        <select id="dest" size="9"></select>
+        <div class="step"><span>① 권역</span><div id="regions" class="chips"></div></div>
+        <div class="step"><span>② 국가</span><select id="country"></select></div>
+        <div class="step"><span>③ 공항</span>
+          <input id="search" type="search" placeholder="선택한 국가 안에서 검색 (공항명·도시·IATA)" />
+          <select id="dest" size="8"></select>
+        </div>
       </section>
 
       <section>
@@ -45,6 +48,7 @@
 
       <section>
         <h2>5. 표시 옵션</h2>
+        <label class="check"><input type="checkbox" id="optTargets" checked /> 출발·도착 지점 붉은 타겟 원형 <small>(지도 위 오버레이)</small></label>
         <label class="check"><input type="checkbox" id="optBorders" checked /> 국경선 (GeoJSON)</label>
         <label class="check"><input type="checkbox" id="optCountries" checked /> 국가명 라벨</label>
         <label class="check"><input type="checkbox" id="optClouds" checked /> 구름</label>
@@ -78,6 +82,8 @@
             <input id="targetMB" type="number" min="5" max="500" value="50" />
           </label>
         </div>
+        <label class="check"><input type="checkbox" id="optSS" checked /> 고품질 렌더링 <small>(슈퍼샘플링 · 가장자리가 부드러워지고 저장 시간이 늘어남)</small></label>
+        <p id="bitrateHint" class="hint"></p>
         <div class="actions">
           <button id="savePng" class="btn">이미지 저장 (PNG)</button>
           <button id="saveMp4" class="btn primary">영상 저장 (MP4)</button>
@@ -100,6 +106,7 @@
       <div class="transport">
         <button id="play" class="btn icon" aria-label="재생/일시정지">❚❚</button>
         <input id="scrub" type="range" min="0" max="1000" value="0" />
+        <label class="switch" title="좌측 하단 정보 카드 표시/숨김"><input type="checkbox" id="optCard" checked /><i></i><span>정보 카드</span></label>
         <span id="clock">0:00 / 0:15</span>
       </div>
     </main>

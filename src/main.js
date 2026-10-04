@@ -7,11 +7,17 @@ import { exportMp4, canvasToPng, downloadBlob, supportsMp4Export } from './expor
 const $ = (id) => document.getElementById(id);
 const DEFAULT_ORIGIN = 'ICN-T1';
 const DEFAULT_DEST = 'NRT';
+// 국가를 고르면 처음 선택되는 대표 공항
+const DEFAULT_AIRPORT = {
+  JP: 'NRT', CN: 'PVG', HK: 'HKG', MO: 'MFM', TW: 'TPE', MN: 'UBN',
+  VN: 'SGN', TH: 'BKK', PH: 'MNL', SG: 'SIN', MY: 'KUL', ID: 'CGK', KH: 'PNH', LA: 'VTE', MM: 'RGN', BN: 'BWN', TL: 'DIL',
+};
 
 const state = {
   airline: DEFAULT_AIRLINE,
   originId: DEFAULT_ORIGIN,
   regionId: 'east-asia',
+  countryId: 'JP',
   destId: DEFAULT_DEST,
   duration: 15,
   playing: true,
@@ -66,40 +72,51 @@ function buildRegions() {
     b.setAttribute('aria-pressed', r.id === state.regionId);
     b.onclick = () => {
       state.regionId = r.id;
-      const first = destinationsInRegion().find((a) => a.rank === 0) || destinationsInRegion()[0];
-      state.destId = first.id;
-      buildRegions(); buildDestinations(); applyFlight();
+      state.countryId = countriesInRegion()[0].code;
+      pickDefaultAirport();
+      $('search').value = '';
+      buildRegions(); buildCountries(); buildDestinations(); applyFlight();
     };
     box.appendChild(b);
   }
 }
 
-function destinationsInRegion() {
+/** 권역 안에서 공항 데이터가 있는 국가만 */
+function countriesInRegion() {
   const region = data.regions.find((r) => r.id === state.regionId);
-  const set = new Set(region.countries.map((c) => c.code));
-  return data.destinations.filter((a) => set.has(a.country));
+  const has = new Set(data.destinations.map((a) => a.country));
+  return region.countries.filter((c) => has.has(c.code));
+}
+
+function airportsInCountry() {
+  return data.destinations.filter((a) => a.country === state.countryId);
+}
+
+function pickDefaultAirport() {
+  const list = airportsInCountry();
+  state.destId = (list.find((a) => a.iata === DEFAULT_AIRPORT[state.countryId]) || list[0]).id;
+}
+
+function buildCountries() {
+  const sel = $('country');
+  const count = (code) => data.destinations.filter((a) => a.country === code).length;
+  sel.innerHTML = countriesInRegion().map((c) => `<option value="${c.code}">${c.ko} (${c.en}) · 공항 ${count(c.code)}곳</option>`).join('');
+  sel.value = state.countryId;
+  sel.onchange = () => {
+    state.countryId = sel.value;
+    pickDefaultAirport();
+    $('search').value = '';
+    buildDestinations();
+    applyFlight();
+  };
 }
 
 function buildDestinations() {
   const q = $('search').value.trim().toLowerCase();
-  const region = data.regions.find((r) => r.id === state.regionId);
-  const list = destinationsInRegion().filter((a) => !q || [a.iata, a.icao, a.en, a.ko, a.city, data.countryNames[a.country].ko].join(' ').toLowerCase().includes(q));
+  const list = airportsInCountry().filter((a) => !q || [a.iata, a.icao, a.en, a.ko, a.city].join(' ').toLowerCase().includes(q));
   const sel = $('dest');
-  sel.innerHTML = '';
-  for (const c of region.countries) {
-    const items = list.filter((a) => a.country === c.code);
-    if (!items.length) continue;
-    const g = document.createElement('optgroup');
-    g.label = `${c.ko} (${c.en})`;
-    for (const a of items) {
-      const o = document.createElement('option');
-      o.value = a.id;
-      o.textContent = `${a.ko || a.en} · ${a.iata}`;
-      g.appendChild(o);
-    }
-    sel.appendChild(g);
-  }
-  sel.value = state.destId;
+  sel.innerHTML = list.map((a) => `<option value="${a.id}">${a.ko || a.en} · ${a.iata}</option>`).join('');
+  if (list.some((a) => a.id === state.destId)) sel.value = state.destId;
   sel.onchange = () => { state.destId = sel.value; applyFlight(); };
 }
 
@@ -118,6 +135,8 @@ function flightMeta() {
     routeColor: airline.route,
     routeCountries: new Set([o.country, d.country]),
     showCountryLabels: $('optCountries').checked,
+    showCard: $('optCard').checked,
+    showTargets: $('optTargets').checked,
     tilesActive: false,
   };
 }
@@ -186,8 +205,12 @@ function makeComposer(W, H) {
   const out = document.createElement('canvas');
   out.width = W; out.height = H;
   const ctx = out.getContext('2d');
+  // 슈퍼샘플링: 더 큰 해상도로 렌더한 뒤 축소해 가장자리·가는 선을 부드럽게 (4K는 부하가 커서 제외)
+  const ss = $('optSS').checked && Math.min(W, H) <= 1440 ? (Math.min(W, H) <= 1080 ? 1.5 : 1.25) : 1;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
   return (t, seconds) => {
-    scene.resize(W, H);
+    scene.resize(Math.round(W * ss), Math.round(H * ss));
     const info = scene.renderAt(t, seconds);
     ctx.drawImage(glCanvas, 0, 0, W, H);
     drawHud(ctx, W, H, info, meta);
@@ -241,7 +264,9 @@ async function saveMp4() {
     });
     downloadBlob(blob, `${baseName()}.mp4`);
     const sec = Math.round((performance.now() - t0) / 1000);
-    $('exportNote').textContent = `저장 완료: ${(blob.size / 1024 / 1024).toFixed(1)} MB · ${W}×${H} · ${fps}fps · ${codec} · 소요 ${sec}초`;
+    const mb = blob.size / 1024 / 1024;
+    $('exportNote').textContent = `저장 완료: ${mb.toFixed(1)} MB · ${W}×${H} · ${fps}fps · ${codec} · 소요 ${sec}초` +
+      (mb < targetMB * 0.7 ? ' — 목표보다 작게 나왔습니다. 해상도나 fps를 올리면 용량을 더 활용할 수 있어요.' : '');
   } catch (e) {
     $('exportNote').textContent = e.name === 'AbortError' ? '영상 저장을 취소했습니다.' : `영상 저장 실패: ${e.message}`;
     console.error(e);
@@ -251,6 +276,12 @@ async function saveMp4() {
     setBusy(false);
     syncPreviewSize();
   }
+}
+
+function updateBitrateHint() {
+  const mb = +$('targetMB').value || 50, sec = state.duration, fps = +$('fps').value;
+  const mbps = (mb * 8 * 0.94) / sec;
+  $('bitrateHint').textContent = `목표 ${mb}MB · ${sec}초 → 약 ${mbps.toFixed(1)} Mbps (${fps}fps). 화면이 단순한 구간이 많으면 실제 용량이 목표보다 작게 나올 수 있고, 해상도·fps를 올리면 같은 용량에서 더 선명해집니다.`;
 }
 
 function setBusy(busy, msg) {
@@ -265,20 +296,25 @@ async function init() {
   hudCtx = hudCanvas.getContext('2d');
   window.__app = { scene, state, get meta() { return meta; }, compose: (W, H) => makeComposer(W, H), ensureAssets };
 
-  buildAirlineChips(); buildOrigins(); buildRegions(); buildDestinations();
+  buildAirlineChips(); buildOrigins(); buildRegions(); buildCountries(); buildDestinations();
   syncPreviewSize();
   await scene.ready;
   applyFlight();
   $('loading').hidden = true;
 
   const reflow = () => { refreshMeta(); };
+  $('optCard').onchange = () => { scene.setOptions({ cardShown: $('optCard').checked }); refreshMeta(); };
+  $('optTargets').onchange = () => { scene.setOptions({ markers3d: !$('optTargets').checked }); refreshMeta(); };
+  scene.setOptions({ markers3d: !$('optTargets').checked, cardShown: $('optCard').checked });
   ['outMin', 'backMin'].forEach((id) => $(id).addEventListener('input', reflow));
   $('search').addEventListener('input', buildDestinations);
   $('optBorders').onchange = (e) => scene.setOptions({ borders: e.target.checked });
   $('optClouds').onchange = (e) => scene.setOptions({ clouds: e.target.checked });
   $('optCountries').onchange = (e) => { scene.setOptions({ countryLabels: e.target.checked }); refreshMeta(); };
   $('optHd').onchange = (e) => { scene.setOptions({ hdTiles: e.target.checked }); refreshMeta(); };
-  $('duration').oninput = (e) => { state.duration = +e.target.value; $('durationOut').textContent = `${state.duration}초`; };
+  $('duration').oninput = (e) => { state.duration = +e.target.value; $('durationOut').textContent = `${state.duration}초`; updateBitrateHint(); };
+  $('targetMB').oninput = $('fps').onchange = updateBitrateHint;
+  updateBitrateHint();
   $('aspect').onchange = $('quality').onchange = syncPreviewSize;
   $('play').onclick = () => { state.playing = !state.playing; $('play').textContent = state.playing ? '❚❚' : '▶'; };
   $('scrub').oninput = (e) => { state.playing = false; $('play').textContent = '▶'; state.t = e.target.value / 1000; };
