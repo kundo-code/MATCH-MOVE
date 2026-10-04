@@ -22,6 +22,7 @@ export const AIRLINES = [
   { id: 'VJ', ko: '비엣젯항공', en: 'VietJet Air', body: '#e8161b', accent: '#ffd400', tail: '#ffd400', route: '#ffd84a' },
   { id: 'PR', ko: '필리핀항공', en: 'Philippine Airlines', body: '#eef1f8', accent: '#0a2d78', tail: '#0a2d78', route: '#5b8def' },
   { id: 'MH', ko: '말레이시아항공', en: 'Malaysia Airlines', body: '#eef1f8', accent: '#0a3b8f', tail: '#c4161c', route: '#ff5a5f' },
+  { id: 'ID', ko: '바틱에어', en: 'Batik Air', body: '#f4f4f4', accent: '#d6193e', tail: '#d6193e', route: '#ff5a78' },
   { id: 'GA', ko: '가루다인도네시아', en: 'Garuda Indonesia', body: '#eef2f5', accent: '#00a3ad', tail: '#00a3ad', route: '#3ad0d8' },
   { id: 'AK', ko: '에어아시아', en: 'AirAsia', body: '#e4002b', accent: '#ffffff', tail: '#e4002b', route: '#ff5c7a' },
 ];

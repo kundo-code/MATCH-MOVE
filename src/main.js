@@ -303,6 +303,16 @@ async function init() {
   $('loading').hidden = true;
 
   const reflow = () => { refreshMeta(); };
+  const setMapZoom = (pct) => {
+    pct = Math.min(300, Math.max(40, Math.round(pct / 5) * 5));
+    $('mapZoom').value = pct;
+    $('mapZoomOut').textContent = `${pct}%`;
+    scene.setOptions({ mapZoom: pct / 100 });
+  };
+  $('mapZoom').oninput = (e) => setMapZoom(+e.target.value);
+  // 미리보기 위에서 휠로 확대/축소, 더블클릭으로 초기화
+  stage.addEventListener('wheel', (e) => { e.preventDefault(); setMapZoom(+$('mapZoom').value * (e.deltaY < 0 ? 1.08 : 1 / 1.08)); }, { passive: false });
+  stage.addEventListener('dblclick', () => setMapZoom(100));
   $('optCard').onchange = () => { scene.setOptions({ cardShown: $('optCard').checked }); refreshMeta(); };
   $('optTargets').onchange = () => { scene.setOptions({ markers3d: !$('optTargets').checked }); refreshMeta(); };
   scene.setOptions({ markers3d: !$('optTargets').checked, cardShown: $('optCard').checked });

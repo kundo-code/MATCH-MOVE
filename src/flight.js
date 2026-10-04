@@ -86,39 +86,49 @@ export function buildArc(from, to, { segments = 240, lift = 0.16, groundLift = 0
 const smoothstep = (t) => { t = Math.min(1, Math.max(0, t)); return t * t * (3 - 2 * t); };
 
 /**
- * 이륙 → 순항 → 활주로 접근(글라이드) → 접지 → 지상 활주까지 포함한 비행경로.
- * 구면 위 대권을 φ(라디안)로 샘플링하고, 고도는 양 끝에서 완만한 경사(약 3°)로 지면에 닿는다.
- * 반환: { pts, theta(출발~도착 각거리), phi(활주 포함 총 각도), rollout, touchdownIndex }
+ * 이륙 활주 → 포물선 형태의 상승·하강 → 접근(약 3° 글라이드) → 접지 → 도착 지점에서 정지.
+ * 구면 위 대권을 φ(라디안)로 샘플링한다. 경로의 끝(φ = theta)이 도착 공항 좌표다.
+ * 반환: { pts, theta, phi(=theta), rollout, touchdown(접지 φ) }
  */
-export function buildFlightPath(from, to, { segments = 480, lift = 0.12 } = {}) {
+export function buildFlightPath(from, to, { segments = 480, lift = 0.2 } = {}) {
   const a = latLonToVec(from.lat, from.lon), b = latLonToVec(to.lat, to.lon);
   const theta = Math.acos(Math.min(1, Math.max(-1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2])));
   const n = [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
   const nl = Math.hypot(...n) || 1;
   const t0 = [(n[1] * a[2] - n[2] * a[1]) / nl, (n[2] * a[0] - n[0] * a[2]) / nl, (n[0] * a[1] - n[1] * a[0]) / nl];
   const chord = 2 * Math.sin(theta / 2);
-  const rollout = Math.min(0.004, 0.03 * theta);
-  const total = theta + rollout;
+  const rollout = Math.min(0.004, 0.03 * theta); // 이륙 활주 / 접지 후 활주 거리
+  const liftoff = rollout, touchdown = theta - rollout;
+  const air = touchdown - liftoff;
 
-  const hc = chord * lift;            // 순항 고도
-  const xa = Math.min(0.02, 0.1 * theta); // 최종 접근 구간 길이
-  const ha = xa * 0.055;              // 접근 시작 고도 (경사각 약 3°)
-  const xd = 0.3 * theta;             // 순항 고도까지 오르내리는 구간
-  const ground = (x) => {
+  const hc = chord * lift;                 // 정점 고도
+  const xa = Math.min(0.02, 0.1 * air);    // 활주로 직전·직후의 완만한 구간
+  const ha = xa * 0.055;                   // 경사 약 3°
+  const xd = air / 2;                      // 정점은 경로 중간 → 좌우 대칭 포물선 형태
+  // 지면에서 x만큼 떨어진 지점의 고도: 지면 부근은 완만하게, 이후 부드러운 S곡선으로 정점까지
+  const alt = (x) => {
     if (x <= 0) return 0;
     if (x < xa) return ha * Math.pow(x / xa, 1.15);
-    if (x < xd) return ha + (hc - ha) * smoothstep((x - xa) / (xd - xa));
-    return hc;
+    return ha + (hc - ha) * smoothstep((x - xa) / (xd - xa));
   };
 
   const pts = [];
-  let touchdownIndex = 0;
   for (let i = 0; i <= segments; i++) {
-    const phi = (i / segments) * total;
-    const h = phi >= theta ? 0 : Math.min(ground(phi), ground(theta - phi));
-    if (phi <= theta) touchdownIndex = i;
+    const phi = (i / segments) * theta;
+    const h = phi <= liftoff || phi >= touchdown ? 0 : Math.min(alt(phi - liftoff), alt(touchdown - phi));
     const c = Math.cos(phi), s = Math.sin(phi), r = 1 + h;
     pts.push([(a[0] * c + t0[0] * s) * r, (a[1] * c + t0[1] * s) * r, (a[2] * c + t0[2] * s) * r]);
   }
-  return { pts, theta, phi: total, rollout, touchdownIndex };
+  return { pts, theta, phi: theta, rollout, touchdown };
+}
+
+/** 지표면(고도 0)을 따라가는 대권 점들 — 지도 위 경로선용 */
+export function buildGroundTrack(from, to, { segments = 200, radius = 1.0007 } = {}) {
+  const a = latLonToVec(from.lat, from.lon), b = latLonToVec(to.lat, to.lon);
+  const pts = [];
+  for (let i = 0; i <= segments; i++) {
+    const p = slerp(a, b, i / segments);
+    pts.push([p[0] * radius, p[1] * radius, p[2] * radius]);
+  }
+  return pts;
 }

@@ -59,7 +59,7 @@ function countryLabels(ctx, info, u, route) {
 /** 지도 위에 얹는 붉은 타겟(조준) 마커 */
 function target(ctx, pt, u, seconds = 0, phase = 0, alpha = 1, zoom = 0) {
   if (!pt.visible) return;
-  const r = (24 + 10 * zoom) * u;
+  const r = (24 + 30 * zoom) * u;
   const ph = (seconds * 0.9 + phase) % 1;
   ctx.save();
   ctx.globalAlpha = alpha;
@@ -74,6 +74,7 @@ function target(ctx, pt, u, seconds = 0, phase = 0, alpha = 1, zoom = 0) {
   ctx.fillStyle = '#ff3b30';
   ctx.lineWidth = 3.2 * u;
   ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
+  ctx.globalAlpha = alpha * (1 - 0.8 * zoom);
   ctx.lineWidth = 2 * u;
   ctx.beginPath(); ctx.arc(0, 0, r * 0.5, 0, Math.PI * 2); ctx.stroke();
   // 십자 눈금
@@ -88,41 +89,45 @@ function target(ctx, pt, u, seconds = 0, phase = 0, alpha = 1, zoom = 0) {
   ctx.restore();
 }
 
-function callout(ctx, pt, u, { maxY, color, tag, name, sub, dir = 1, big = 1, alpha = 1 }) {
+/** 지점 위로 수직선을 올리고 그 끝에 정보박스를 중앙정렬로 배치. 박스·글자 모두 0.8배 */
+function callout(ctx, pt, u, { maxY, gap = 8, color, tag, name, sub, big = 1, alpha = 1 }) {
   if (!pt.visible || alpha <= 0.01) return;
+  const k = 0.8 * big;
   ctx.save();
   ctx.globalAlpha = alpha;
-  const nameSize = 28 * u * big, subSize = 19 * u * big, tagSize = 17 * u * big;
+  const nameSize = 28 * u * k, subSize = 19 * u * k, tagSize = 17 * u * k;
   ctx.font = `700 ${nameSize}px ${FONT}`;
   const wName = ctx.measureText(name).width;
   ctx.font = `500 ${subSize}px ${FONT}`;
   const wSub = ctx.measureText(sub).width;
-  const padX = 18 * u * big, padY = 14 * u * big;
-  const w = Math.max(wName, wSub) + padX * 2;
-  const h = tagSize + nameSize + subSize + padY * 2 + 14 * u * big;
-  const lift = 90 * u * big;
-  // dir: +1=오른쪽, -1=왼쪽 (중간값은 연속 보간)
-  let x = pt.x + dir * 40 * u * big - w * (1 - dir) / 2;
-  let y = pt.y - lift - h;
-  x = clamp(x, 12 * u, ctx.canvas.width - w - 12 * u);
-  y = clamp(y, 12 * u, (maxY ?? ctx.canvas.height) - h - 12 * u);
+  ctx.font = `700 ${tagSize}px ${FONT}`;
+  const wTag = ctx.measureText(tag).width;
+  const padX = 18 * u * k, padY = 14 * u * k;
+  const w = Math.max(wName, wSub, wTag) + padX * 2;
+  const h = tagSize + nameSize + subSize + padY * 2 + 14 * u * k;
+  const lineLen = 62 * u * k;
+  const x = clamp(pt.x - w / 2, 12 * u, ctx.canvas.width - w - 12 * u);
+  const y = clamp(pt.y - gap * u - lineLen - h, 12 * u, (maxY ?? ctx.canvas.height) - h - 12 * u);
 
+  // 지점에서 박스 하단 중앙으로 이어지는 선
   ctx.strokeStyle = color;
   ctx.lineWidth = 2 * u;
   ctx.beginPath();
-  ctx.moveTo(pt.x, pt.y);
-  ctx.lineTo(clamp(pt.x + dir * 40 * u * big, x, x + w), y + h);
+  ctx.moveTo(pt.x, pt.y - gap * u);
+  ctx.lineTo(clamp(pt.x, x + 10 * u, x + w - 10 * u), y + h);
   ctx.stroke();
 
-  glass(ctx, x, y, w, h, 14 * u, 0.68);
-  roundRect(ctx, x, y + 12 * u, 5 * u, h - 24 * u, 3 * u);
+  glass(ctx, x, y, w, h, 12 * u, 0.68);
+  roundRect(ctx, x, y + 10 * u, 4 * u, h - 20 * u, 2 * u);
   ctx.fillStyle = color; ctx.fill();
+  // 텍스트는 박스 안에서 중앙정렬
+  const cx = x + w / 2 + 2 * u;
   let yy = y + padY + tagSize;
-  text(ctx, tag, x + padX, yy - 3 * u, { size: tagSize, weight: 700, color });
-  yy += nameSize + 6 * u * big;
-  text(ctx, name, x + padX, yy - 4 * u, { size: nameSize, weight: 700 });
-  yy += subSize + 8 * u * big;
-  text(ctx, sub, x + padX, yy - 4 * u, { size: subSize, weight: 500, color: 'rgba(255,255,255,0.78)' });
+  text(ctx, tag, cx, yy - 3 * u, { size: tagSize, weight: 700, color, align: 'center' });
+  yy += nameSize + 6 * u * k;
+  text(ctx, name, cx, yy - 4 * u, { size: nameSize, weight: 700, align: 'center' });
+  yy += subSize + 8 * u * k;
+  text(ctx, sub, cx, yy - 4 * u, { size: subSize, weight: 500, color: 'rgba(255,255,255,0.78)', align: 'center' });
   ctx.restore();
 }
 
@@ -148,7 +153,7 @@ export function drawHud(ctx, w, h, info, meta) {
   if (meta.showCountryLabels !== false) countryLabels(ctx, info, u, meta.routeCountries);
 
   const m = 36 * u;
-  const cardH = (portrait ? 330 : 214) * u;
+  const cardH = 98 * u; // 비행거리·가는 편·오는 편만 보여주는 컴팩트 카드
   const showCard = meta.showCard !== false;
   const cy = showCard ? h - m - cardH : h;
 
@@ -157,18 +162,16 @@ export function drawHud(ctx, w, h, info, meta) {
     target(ctx, info.dest, u, info.seconds, 0.5, intro, info.zoom);
   }
 
-  // 공항 콜아웃: 도착지는 줌인할수록 커진다
+  // 공항 콜아웃: 도착지는 줌인할수록 살짝 커진다. 붉은 타겟이 있으면 그 바깥에서 선이 시작한다
   const z = info.zoom;
-  const oDir = portrait ? -1 : -1;
+  const gap = meta.showTargets ? 24 + 30 * z + 4 : 8;
   callout(ctx, info.origin, u, {
-    maxY: cy,
-    color: '#4ade80', tag: '출발 · DEPARTURE', dir: oDir,
+    maxY: cy, gap, color: '#4ade80', tag: '출발 · DEPARTURE',
     name: `${meta.origin.ko || meta.origin.en}`, sub: `${meta.originCountry.ko} · ${meta.origin.iata}`,
     alpha: intro * (1 - smooth((z - 0.2) / 0.5) * 0.9),
   });
   callout(ctx, info.dest, u, {
-    maxY: cy,
-    color: '#ffb020', tag: '도착 · ARRIVAL', dir: 1 - 2 * smooth((z - 0.15) / 0.5), big: 1 + 0.25 * z,
+    maxY: cy, gap, color: '#ffb020', tag: '도착 · ARRIVAL', big: 1 + 0.15 * z,
     name: `${meta.dest.ko || meta.dest.en}`, sub: `${meta.destCountry.ko} · ${meta.dest.iata}`,
     alpha: intro,
   });
@@ -184,45 +187,24 @@ export function drawHud(ctx, w, h, info, meta) {
   text(ctx, `${meta.origin.iata}  →  ${meta.dest.iata}`, m + topW - 28 * u, m + 62 * u, { size: 44 * u, weight: 900, align: 'right', color: '#fff' });
 
   if (showCard) {
-    // ── 하단: 노선 정보 카드 (항상 표시) ────────────────────────────────
-    const cardW = portrait ? w - m * 2 : Math.min(1180 * u, w - m * 2);
+    const cardW = Math.min(w - m * 2, 660 * u);
     const cx = m;
-    glass(ctx, cx, cy, cardW, cardH, 22 * u, 0.7);
-    const colW = portrait ? cardW : (cardW - 40 * u) / 2;
-
-    const rows = (x, y, tag, color, ap, country) => {
-      roundRect(ctx, x + 24 * u, y + 6 * u, 6 * u, 70 * u, 3 * u);
-      ctx.fillStyle = color; ctx.fill();
-      text(ctx, tag, x + 46 * u, y + 24 * u, { size: 17 * u, weight: 700, color });
-      ctx.font = `700 ${32 * u}px ${FONT}`;
-      text(ctx, fit(ctx, ap.ko || ap.en, colW - 90 * u), x + 46 * u, y + 62 * u, { size: 32 * u, weight: 700 });
-      ctx.font = `500 ${20 * u}px ${FONT}`;
-      text(ctx, fit(ctx, `${country.ko} (${country.en}) · ${ap.iata}/${ap.icao}`, colW - 90 * u), x + 46 * u, y + 90 * u, { size: 20 * u, weight: 500, color: 'rgba(255,255,255,0.75)' });
+    glass(ctx, cx, cy, cardW, cardH, 18 * u, 0.7);
+    const colW = (cardW - 44 * u) / 3;
+    const stat = (i, label, value, color = '#fff') => {
+      const x = cx + 22 * u + colW * i;
+      text(ctx, label, x, cy + 30 * u, { size: 15 * u, weight: 500, color: 'rgba(255,255,255,0.62)' });
+      text(ctx, value, x, cy + 63 * u, { size: 28 * u, weight: 700, color });
     };
-    rows(cx, cy + 22 * u, '출발 DEPARTURE', '#4ade80', meta.origin, meta.originCountry);
-    if (portrait) rows(cx, cy + 22 * u + 112 * u, '도착 ARRIVAL', '#ffb020', meta.dest, meta.destCountry);
-    else rows(cx + colW + 40 * u, cy + 22 * u, '도착 ARRIVAL', '#ffb020', meta.dest, meta.destCountry);
-
-    // 구분선 + 시간 정보
-    const ty = portrait ? cy + 22 * u + 112 * u * 2 - 8 * u : cy + 22 * u + 118 * u;
-    ctx.strokeStyle = 'rgba(255,255,255,0.14)';
-    ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(cx + 24 * u, ty - 10 * u); ctx.lineTo(cx + cardW - 24 * u, ty - 10 * u); ctx.stroke();
-
-    const stat = (x, label, value, color = '#fff') => {
-      text(ctx, label, x, ty + 22 * u, { size: 16 * u, weight: 500, color: 'rgba(255,255,255,0.6)' });
-      text(ctx, value, x, ty + 58 * u, { size: 30 * u, weight: 700, color });
-    };
-    const sw = (cardW - 48 * u) / 3;
-    stat(cx + 24 * u, '비행 거리', `${Math.round(meta.distanceKm).toLocaleString('ko-KR')} km`);
-    stat(cx + 24 * u + sw, `가는 편  ${meta.origin.iata} → ${meta.dest.iata}`, formatDuration(meta.outMin), '#7dd3fc');
-    stat(cx + 24 * u + sw * 2, `오는 편  ${meta.dest.iata} → ${meta.origin.iata}`, formatDuration(meta.backMin), '#fcd34d');
+    stat(0, '비행 거리', `${Math.round(meta.distanceKm).toLocaleString('ko-KR')} km`);
+    stat(1, `가는 편  ${meta.origin.iata} → ${meta.dest.iata}`, formatDuration(meta.outMin), '#7dd3fc');
+    stat(2, `오는 편  ${meta.dest.iata} → ${meta.origin.iata}`, formatDuration(meta.backMin), '#fcd34d');
 
     // 진행 바
-    const barY = cy + cardH - 12 * u;
-    roundRect(ctx, cx + 24 * u, barY, cardW - 48 * u, 4 * u, 2 * u);
+    const barY = cy + cardH - 13 * u;
+    roundRect(ctx, cx + 22 * u, barY, cardW - 44 * u, 4 * u, 2 * u);
     ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.fill();
-    roundRect(ctx, cx + 24 * u, barY, Math.max(4 * u, (cardW - 48 * u) * info.p), 4 * u, 2 * u);
+    roundRect(ctx, cx + 22 * u, barY, Math.max(4 * u, (cardW - 44 * u) * info.p), 4 * u, 2 * u);
     ctx.fillStyle = meta.routeColor; ctx.fill();
     ctx.globalAlpha = 1;
   }

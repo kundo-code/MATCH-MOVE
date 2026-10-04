@@ -4,7 +4,8 @@ import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
 import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
-import { latLonToVec, buildArc, buildFlightPath, bearingDeg, greatCircleKm } from './flight.js';
+import { latLonToVec, buildFlightPath, buildGroundTrack, bearingDeg, greatCircleKm } from './flight.js';
+import { buildPlane, buildShadow } from './plane.js';
 import { buildAirportPatches } from './satellite.js';
 
 const D2R = Math.PI / 180;
@@ -47,83 +48,6 @@ function slerpV(a, b, t) {
   return a.clone().multiplyScalar(Math.sin((1 - t) * om) / s).addScaledVector(b, Math.sin(t * om) / s);
 }
 
-function buildPlane(livery) {
-  const g = new THREE.Group();
-  const body = new THREE.MeshStandardMaterial({ color: livery.body, roughness: 0.35, metalness: 0.2, emissive: livery.body, emissiveIntensity: 0.18 });
-  const accent = new THREE.MeshStandardMaterial({ color: livery.accent, roughness: 0.4, metalness: 0.2, emissive: livery.accent, emissiveIntensity: 0.25 });
-  const tail = new THREE.MeshStandardMaterial({ color: livery.tail, roughness: 0.4, metalness: 0.2, emissive: livery.tail, emissiveIntensity: 0.25 });
-
-  const fus = new THREE.CapsuleGeometry(0.045, 0.8, 8, 20);
-  fus.rotateX(Math.PI / 2);
-  fus.scale(1, 1, 1);
-  g.add(new THREE.Mesh(fus, body));
-
-  // 동체 포인트 띠
-  const band = new THREE.CylinderGeometry(0.0465, 0.0465, 0.07, 20, 1, true);
-  band.rotateX(Math.PI / 2);
-  band.translate(0, 0, 0.1);
-  g.add(new THREE.Mesh(band, accent));
-
-  const wingShape = new THREE.Shape();
-  wingShape.moveTo(0.03, -0.12);
-  wingShape.lineTo(0.46, 0.12);
-  wingShape.lineTo(0.46, 0.22);
-  wingShape.lineTo(0.03, -0.1);
-  wingShape.closePath();
-  const wing = new THREE.ExtrudeGeometry(wingShape, { depth: 0.012, bevelEnabled: false });
-  wing.rotateX(-Math.PI / 2);
-  wing.translate(0, -0.012, 0);
-  const wR = new THREE.Mesh(wing, body);
-  const wL = wR.clone();
-  wL.scale.x = -1;
-  g.add(wR, wL);
-
-  const stab = wing.clone();
-  stab.scale(0.38, 1, 0.38);
-  stab.translate(0, 0.01, -0.34);
-  const sR = new THREE.Mesh(stab, body);
-  const sL = sR.clone();
-  sL.scale.x = -1;
-  g.add(sR, sL);
-
-  const finShape = new THREE.Shape();
-  finShape.moveTo(0.28, 0.03);
-  finShape.lineTo(0.4, 0.21);
-  finShape.lineTo(0.45, 0.21);
-  finShape.lineTo(0.45, 0.03);
-  finShape.closePath();
-  const fin = new THREE.ExtrudeGeometry(finShape, { depth: 0.014, bevelEnabled: false });
-  fin.rotateY(Math.PI / 2);
-  fin.translate(-0.007, 0.02, 0);
-  g.add(new THREE.Mesh(fin, tail));
-
-  for (const s of [-1, 1]) {
-    const eng = new THREE.CylinderGeometry(0.03, 0.026, 0.16, 16);
-    eng.rotateX(Math.PI / 2);
-    eng.translate(s * 0.17, -0.05, 0.03);
-    g.add(new THREE.Mesh(eng, accent));
-  }
-  // 랜딩기어 (저고도에서만 표시)
-  const gear = new THREE.Group();
-  const darkMat = new THREE.MeshStandardMaterial({ color: 0x2a2f3a, roughness: 0.8 });
-  const gearAt = (x, z, len) => {
-    const leg = new THREE.CylinderGeometry(0.006, 0.006, len, 8);
-    leg.translate(x, -0.045 - len / 2, z);
-    gear.add(new THREE.Mesh(leg, darkMat));
-    const wheel = new THREE.CylinderGeometry(0.02, 0.02, 0.02, 14);
-    wheel.rotateZ(Math.PI / 2);
-    wheel.translate(x, -0.045 - len, z);
-    gear.add(new THREE.Mesh(wheel, darkMat));
-  };
-  gearAt(0, 0.3, 0.05);
-  gearAt(0.1, 0.0, 0.055);
-  gearAt(-0.1, 0.0, 0.055);
-  gear.visible = false;
-  g.add(gear);
-  g.userData.gear = gear;
-  return g;
-}
-
 export class GlobeScene {
   constructor(canvas) {
     this.canvas = canvas;
@@ -135,7 +59,7 @@ export class GlobeScene {
     this.maxAniso = this.renderer.capabilities.getMaxAnisotropy();
     this.flight = null;
     this.patches = new Map();
-    this.options = { borders: true, clouds: true, hdTiles: true, countryLabels: true, markers3d: false, cardShown: true };
+    this.options = { borders: true, clouds: true, hdTiles: true, countryLabels: true, markers3d: false, cardShown: true, mapZoom: 1 };
     this.size = { w: 1280, h: 720 };
     this.#buildStatic();
   }
@@ -230,39 +154,29 @@ export class GlobeScene {
     this.chord = this.A.distanceTo(this.B);
     this.routeBearing = bearingDeg(origin, dest);
 
-    const path = buildFlightPath(origin, dest, { segments: 480, lift: 0.12 });
+    const path = buildFlightPath(origin, dest, { segments: 480, lift: 0.2 });
     this.arc = path.pts;
     this.segments = path.pts.length - 1;
     this.theta = path.theta;
     this.pathPhi = path.phi;
     this.rollout = path.rollout;
-    this.sTouch = path.theta / path.phi;
-    const backArc = buildArc(dest, origin, { segments: 160, lift: 0.12, groundLift: 0.00006, offset: this.chord * 0.07 });
-    const flat = (pts) => pts.flat();
+    this.phiTouch = path.touchdown;
+    this.sTouch = path.touchdown / path.phi;
 
-    const col = new THREE.Color(routeColor);
-    const full = new LineGeometry(); full.setPositions(flat(this.arc));
-    const fullMat = this.#lineMat({ color: col, linewidth: 2.2, opacity: 0.45, dashed: true, dashSize: 0.01, gapSize: 0.01 });
-    fullMat.userData.dash = [0.05, 0.03];
-    const fullLine = new Line2(full, fullMat); fullLine.computeLineDistances(); fullLine.frustumCulled = false;
-    this.dynamic.add(fullLine);
-
-    const back = new LineGeometry(); back.setPositions(flat(backArc));
-    const backMat = this.#lineMat({ color: 0xffffff, linewidth: 1.4, opacity: 0.4, dashed: true, dashSize: 0.01, gapSize: 0.01 });
-    backMat.userData.dash = [0.025, 0.04];
-    const backLine = new Line2(back, backMat); backLine.computeLineDistances(); backLine.frustumCulled = false;
-    this.dynamic.add(backLine);
-
-    this.trailGeo = new LineGeometry(); this.trailGeo.setPositions(flat(this.arc));
-    const trailMat = this.#lineMat({ color: col, linewidth: 4.2, opacity: 1 });
-    this.trail = new Line2(this.trailGeo, trailMat); this.trail.frustumCulled = false;
-    this.dynamic.add(this.trail);
-    const glowMat = this.#lineMat({ color: col, linewidth: 11, opacity: 0.22 });
-    this.trailGlow = new Line2(this.trailGeo, glowMat); this.trailGlow.frustumCulled = false;
-    this.dynamic.add(this.trailGlow);
+    // 출발~도착을 잇는 지표면 직선(대권) 점선 — 빨간색
+    const ground = new LineGeometry();
+    ground.setPositions(buildGroundTrack(origin, dest).flat());
+    const groundMat = this.#lineMat({ color: 0xff3b30, linewidth: 3.2, opacity: 0.95, dashed: true, dashSize: 0.01, gapSize: 0.01 });
+    groundMat.userData.dash = [0.045, 0.03];
+    const groundLine = new Line2(ground, groundMat);
+    groundLine.computeLineDistances();
+    groundLine.frustumCulled = false;
+    this.dynamic.add(groundLine);
 
     this.plane = buildPlane(livery);
     this.dynamic.add(this.plane);
+    this.shadow = buildShadow();
+    this.dynamic.add(this.shadow);
 
     this.markers = [[origin, 0x4ade80], [dest, 0xffb020]].map(([ap, color]) => {
       const n = v3(latLonToVec(ap.lat, ap.lon));
@@ -330,10 +244,10 @@ export class GlobeScene {
       const w = p / touchdown, a = 0.15;
       // 속도: 0에서 부드럽게 가속해 순항속도 유지
       const integral = w < a ? a * ((w / a) ** 3 - (w / a) ** 4 / 2) : a / 2 + (w - a);
-      phi = this.theta * (integral / (1 - a / 2));
+      phi = this.phiTouch * (integral / (1 - a / 2));
     } else {
       const q = (p - touchdown) / (1 - touchdown);
-      phi = this.theta + this.rollout * (1 - (1 - q) ** 2);
+      phi = this.phiTouch + this.rollout * (1 - (1 - q) ** 2);
     }
     return phi / this.pathPhi;
   }
@@ -367,14 +281,15 @@ export class GlobeScene {
     const { intro, zoomFrom } = TIMELINE;
     const s = this.flightProgress(t);
     const p = clamp((t - TIMELINE.flyStart) / (TIMELINE.flyEnd - TIMELINE.flyStart), 0, 1);
-    const tiltFit = 32;
+    const tiltFit = 38;
     const psiFit = this.#fitHeading(aspect);
 
     // 경로 전체가 한 화면에 들어오는 거리
     const need = (this.chord * (aspect < 1 ? 2.0 : 1.7)) / 2;
+    // 사용자가 지정한 지도 확대/축소 배율(mapZoom, 1 = 두 공항이 딱 들어오는 크기)
     const dFit = clamp(
-      aspect >= 1 ? need / (TAN_HALF * aspect) : (need * Math.cos(tiltFit * D2R)) / TAN_HALF,
-      0.1, 2.4,
+      (aspect >= 1 ? need / (TAN_HALF * aspect) : (need * Math.cos(tiltFit * D2R)) / TAN_HALF) / this.options.mapZoom,
+      0.03, 3.2,
     );
     const dOver = Math.max(2.5, dFit * 1.5);
     const dEnd = 0.03;
@@ -395,10 +310,8 @@ export class GlobeScene {
     // 3) 도착 직전 공항으로 줌인
     const z = smoother((p - zoomFrom) / (1 - zoomFrom));
     const arriveBearing = this.#bearingOfTangent(this.#pointAt(this.sTouch), this.#tangentAt(this.sTouch));
-    // 접지점과 활주 종료점의 중간을 비춘다
-    const endTarget = this.#pointAt(this.sTouch + (1 - this.sTouch) * 0.45).normalize();
     if (z > 0) {
-      C = slerpV(C, endTarget, z);
+      C = slerpV(C, this.B, z);
       dist = Math.exp(lerp(Math.log(dist), Math.log(dEnd), z));
       tilt = lerp(tilt, 52, z);
       // 정면 뒤가 아니라 비스듬히 보면 기체가 훨씬 잘 보인다
@@ -422,7 +335,7 @@ export class GlobeScene {
     cam.lookAt(st.C);
     const height = Math.max(1e-4, cam.position.length() - 1);
     // 하단 정보 카드에 가리지 않도록 장면을 위로 살짝 올린다
-    cam.setViewOffset(w, h, 0, this.options.cardShown ? Math.round(h * (w < h ? 0.09 : 0.035)) : 0, w, h);
+    cam.setViewOffset(w, h, 0, this.options.cardShown ? Math.round(h * (w < h ? 0.04 : 0.02)) : 0, w, h);
     cam.near = Math.max(0.0008, Math.min(0.5, height * 0.25));
     cam.far = 120;
     cam.updateProjectionMatrix();
@@ -464,10 +377,14 @@ export class GlobeScene {
     this.plane.matrix.scale(new THREE.Vector3(pScale, pScale, pScale));
     this.plane.matrixWorldNeedsUpdate = true;
 
-    // 궤적
-    const count = Math.floor(st.s * this.segments);
-    this.trail.visible = this.trailGlow.visible = count >= 1;
-    if (count >= 1) this.trailGeo.instanceCount = Math.min(this.segments, count);
+    // 그림자: 기체 바로 아래 지면. 고도가 높을수록 옅어진다
+    const groundPos = up.clone().multiplyScalar(1.0003);
+    const fwd = tan.clone().addScaledVector(up, -tan.dot(up)).normalize();
+    const gx = new THREE.Vector3().crossVectors(up, fwd).normalize();
+    this.shadow.matrixAutoUpdate = false;
+    this.shadow.matrix.makeBasis(gx, up, fwd).setPosition(groundPos).scale(new THREE.Vector3(pScale, pScale, pScale));
+    this.shadow.matrixWorldNeedsUpdate = true;
+    this.shadow.material.opacity = 0.42 * (1 - smooth(altitude / (25 * pScale + 1e-6)));
 
     // 마커 (거리에 비례한 크기 + 펄스)
     this.markers.forEach((g, i) => {
