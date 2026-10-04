@@ -151,6 +151,7 @@ function syncPreviewSize() {
 
 function renderPreview() {
   const info = scene.renderAt(state.t, state.t * state.duration);
+  hudCtx.clearRect(0, 0, hudCanvas.width, hudCanvas.height);
   drawHud(hudCtx, hudCanvas.width, hudCanvas.height, info, meta);
   const total = state.duration, cur = state.t * total;
   $('clock').textContent = `${fmt(cur)} / ${fmt(total)}`;

@@ -288,6 +288,8 @@ export class GlobeScene {
   }
 
   resize(w, h) {
+    if (this.size.w === w && this.size.h === h && this.camera.aspect === w / h && this.sized) return;
+    this.sized = true;
     this.size = { w, h };
     this.renderer.setPixelRatio(1);
     this.renderer.setSize(w, h, false);

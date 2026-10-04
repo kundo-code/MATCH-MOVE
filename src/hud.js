@@ -100,7 +100,6 @@ function callout(ctx, pt, u, { color, tag, name, sub, dir = 1, big = 1, alpha = 
 export function drawHud(ctx, w, h, info, meta) {
   const u = Math.min(w, h) / 1080;
   const portrait = h > w;
-  ctx.clearRect(0, 0, w, h);
   ctx.save();
 
   // 비네트
