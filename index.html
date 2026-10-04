@@ -229,8 +229,120 @@
           </div>
         </details>
 
+        <details class="sec" data-sec="story">
+          <summary><span class="num">7</span><span class="t">인트로 · 아웃트로 · 자막</span><span class="sum" id="sumStory"></span></summary>
+          <div class="sec-body">
+            <p class="hint">글자에는 <b>{출발} {도착} {출발코드} {도착코드} {항공사} {국가} {거리} {시간} {귀국시간}</b> 를 쓰면 현재 노선 값으로 자동 치환됩니다. 줄바꿈은 Enter.</p>
+            <div class="sg">
+              <div class="sg-title">인트로</div>
+              <div class="sg-body">
+                <label>템플릿 <select id="introTpl"></select></label>
+                <label>제목 <textarea id="introTitle" rows="2" placeholder="예: {출발} → {도착}">{출발} → {도착}</textarea></label>
+                <label>부제 <textarea id="introSub" rows="2" placeholder="예: {항공사} · {시간}">{항공사} · 비행 {시간}</textarea></label>
+                <label class="zoomrow">표시 시간 <output id="introDurOut">2.5초</output>
+                  <input id="introDur" type="range" min="1" max="6" step="0.5" value="2.5" />
+                </label>
+              </div>
+            </div>
+            <div class="sg">
+              <div class="sg-title">아웃트로</div>
+              <div class="sg-body">
+                <label>템플릿 <select id="outroTpl"></select></label>
+                <label>제목 <textarea id="outroTitle" rows="2" placeholder="예: 다음 여행도 함께해요">구독과 좋아요 부탁드려요!</textarea></label>
+                <label>부제 <textarea id="outroSub" rows="2"></textarea></label>
+                <label class="zoomrow">표시 시간 <output id="outroDurOut">3초</output>
+                  <input id="outroDur" type="range" min="1" max="8" step="0.5" value="3" />
+                </label>
+                <label class="zoomrow">마지막 장면 연장 <output id="holdOut">0초</output>
+                  <input id="outroHold" type="range" min="0" max="8" step="0.5" value="0" />
+                  <small>도착 장면을 이 시간만큼 더 보여주고 그 위에 아웃트로를 얹습니다. 영상 길이가 그만큼 늘어납니다.</small>
+                </label>
+              </div>
+            </div>
+            <div class="sg">
+              <div class="sg-title">채널 로고 · 색상</div>
+              <div class="sg-body">
+                <div class="filerow"><label class="filebtn">로고 이미지 선택<input id="logoFile" type="file" accept="image/*" hidden /></label><span id="logoName" class="fname">선택 안 됨</span><button id="logoClear" class="link" type="button" hidden>삭제</button></div>
+                <label class="check"><input type="checkbox" id="logoWater" /> 영상 내내 우측 하단에 워터마크로 표시</label>
+                <label class="colorrow">포인트 색상 <input id="storyColor" type="color" value="#4da3ff" /></label>
+              </div>
+            </div>
+            <div class="sg">
+              <div class="sg-title">자막</div>
+              <div class="sg-body">
+                <label class="check"><input type="checkbox" id="optSubs" checked /> 자막 표시</label>
+                <div id="subList" class="sublist"></div>
+                <div class="subbtns"><button id="subAdd" class="mini" type="button">+ 자막 추가</button><button id="subAuto" class="mini" type="button">노선 자막 자동 생성</button></div>
+                <div class="grid2">
+                  <label>위치 <select id="subPos"><option value="bottom" selected>하단</option><option value="middle">중앙</option><option value="top">상단</option></select></label>
+                  <label class="check"><input type="checkbox" id="subBg" checked /> 배경 박스</label>
+                </div>
+                <label class="zoomrow">글자 크기 <output id="subSizeOut">100%</output>
+                  <input id="subSize" type="range" min="50" max="200" step="5" value="100" />
+                </label>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <details class="sec" data-sec="sound">
+          <summary><span class="num">8</span><span class="t">사운드 · 음악 · 내레이션</span><span class="sum" id="sumSound"></span></summary>
+          <div class="sec-body">
+            <div class="sg">
+              <div class="sg-title">전체</div>
+              <div class="sg-body">
+                <label class="zoomrow">마스터 음량 <output id="soundVolOut">60%</output>
+                  <input id="soundVol" type="range" min="0" max="100" step="1" value="60" />
+                </label>
+                <label class="check"><input type="checkbox" id="optSoundVideo" checked /> 저장하는 영상(MP4)에 소리 포함</label>
+                <p class="hint">미리보기와 저장 영상은 같은 소리를 씁니다. 파이널컷에서 따로 믹싱하려면 위 항목을 끄고 저장하세요. 브라우저 정책상 화면을 한 번 클릭해야 미리보기에서 소리가 납니다.</p>
+              </div>
+            </div>
+            <div class="sg">
+              <div class="sg-title">비행 사운드</div>
+              <div class="sg-body">
+                <label class="check"><input type="checkbox" id="optSound" checked /> 이륙·상승·순항·착륙 엔진음</label>
+                <label class="zoomrow">엔진음 크기 <output id="engVolOut">100%</output>
+                  <input id="engVol" type="range" min="0" max="150" step="1" value="100" />
+                </label>
+              </div>
+            </div>
+            <div class="sg">
+              <div class="sg-title">배경음악</div>
+              <div class="sg-body">
+                <div class="filerow"><label class="filebtn">음악 파일 선택<input id="bgmFile" type="file" accept="audio/*,.mp3,.m4a,.wav,.aac,.ogg" hidden /></label><span id="bgmName" class="fname">선택 안 됨</span><button id="bgmClear" class="link" type="button" hidden>삭제</button></div>
+                <label class="zoomrow">음악 크기 <output id="bgmVolOut">70%</output>
+                  <input id="bgmVol" type="range" min="0" max="150" step="1" value="70" />
+                </label>
+                <div class="grid2">
+                  <label class="zoomrow">페이드 인 <output id="bgmInOut">1초</output><input id="bgmIn" type="range" min="0" max="6" step="0.5" value="1" /></label>
+                  <label class="zoomrow">페이드 아웃 <output id="bgmOutOut">2초</output><input id="bgmOut" type="range" min="0" max="8" step="0.5" value="2" /></label>
+                </div>
+                <label class="check"><input type="checkbox" id="bgmLoop" checked /> 영상보다 짧으면 반복</label>
+              </div>
+            </div>
+            <div class="sg">
+              <div class="sg-title">내레이션</div>
+              <div class="sg-body">
+                <div class="filerow"><label class="filebtn">음성 파일 선택<input id="narrFile" type="file" accept="audio/*,.mp3,.m4a,.wav,.aac,.ogg" hidden /></label><button id="narrRec" class="mini" type="button">● 녹음</button><span id="narrName" class="fname">선택 안 됨</span><button id="narrClear" class="link" type="button" hidden>삭제</button></div>
+                <label class="zoomrow">내레이션 크기 <output id="narrVolOut">100%</output>
+                  <input id="narrVol" type="range" min="0" max="150" step="1" value="100" />
+                </label>
+                <label class="zoomrow">시작 시간 <output id="narrStartOut">0초</output>
+                  <input id="narrStart" type="range" min="0" max="30" step="0.1" value="0" />
+                </label>
+                <label class="check"><input type="checkbox" id="optDuck" checked /> 내레이션이 나오는 동안 배경음악 자동으로 줄이기</label>
+                <label class="zoomrow">줄이는 정도 <output id="duckOut">60%</output>
+                  <input id="duckAmt" type="range" min="10" max="95" step="5" value="60" />
+                </label>
+                <p class="hint">녹음: 버튼을 누르면 영상이 처음부터 재생되며 마이크로 녹음합니다(미리보기 소리는 꺼집니다). 끝나거나 다시 누르면 저장됩니다.</p>
+              </div>
+            </div>
+          </div>
+        </details>
+
         <details class="sec" data-sec="output">
-          <summary><span class="num">7</span><span class="t">출력 설정</span><span class="sum" id="sumOutput"></span></summary>
+          <summary><span class="num">9</span><span class="t">출력 설정</span><span class="sum" id="sumOutput"></span></summary>
           <div class="sec-body">
             <div class="sg">
               <div class="sg-title">화면 형식</div>
@@ -265,17 +377,6 @@
                 <label class="zoomrow">영상 길이 <output id="durationOut">8초</output>
                   <input id="duration" type="range" min="8" max="40" step="1" value="8" />
                 </label>
-              </div>
-            </div>
-            <div class="sg">
-              <div class="sg-title">사운드</div>
-              <div class="sg-body">
-                <label class="check"><input type="checkbox" id="optSound" checked /> 비행 사운드 (이륙·상승·착륙 엔진음)</label>
-                <label class="zoomrow">음량 <output id="soundVolOut">60%</output>
-                  <input id="soundVol" type="range" min="0" max="100" step="1" value="60" />
-                </label>
-                <label class="check"><input type="checkbox" id="optSoundVideo" checked /> 저장하는 영상(MP4)에 사운드 포함</label>
-                <p class="hint">엔진 출력·음량·음높이가 이륙, 상승, 순항, 하강, 접지(충격음·타이어음·역추력) 단계에 맞춰 자동으로 변합니다. 위 음량은 전체 크기입니다. 브라우저 정책상 화면을 한 번 클릭해야 미리보기에서 소리가 납니다.</p>
               </div>
             </div>
             <div class="sg">

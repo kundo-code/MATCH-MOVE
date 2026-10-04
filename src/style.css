@@ -180,3 +180,21 @@ kbd { background: #16213a; border: 1px solid var(--line); border-radius: 5px; pa
 .combo-item.sel { background: rgba(77,163,255,.32); font-weight: 700; }
 .combo-empty { padding: 10px; font-size: 12px; color: var(--mute); }
 .transport input.volq { flex: none; width: 84px; }
+
+/* 인트로·아웃트로·자막·오디오 */
+textarea, .sublist input[type=text] { width: 100%; background: #0e1730; color: var(--text); border: 1px solid var(--line, #2a3756); border-radius: 8px; padding: 7px 9px; font: inherit; font-size: 13px; resize: vertical; }
+.sg-body label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--mute); }
+.sg-body label.check, .sg-body label.zoomrow { color: var(--text); }
+.filerow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.filebtn { display: inline-flex !important; flex-direction: row !important; padding: 7px 12px; border-radius: 8px; border: 1px solid var(--line, #2a3756); background: #101a35; color: var(--text) !important; font-size: 12.5px !important; cursor: pointer; }
+.filebtn:hover { background: #17254a; }
+.fname { font-size: 12px; color: var(--mute); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.colorrow { flex-direction: row !important; align-items: center; justify-content: space-between; }
+.colorrow input { width: 44px; height: 28px; padding: 0; border: 1px solid var(--line, #2a3756); border-radius: 6px; background: none; }
+.sublist { display: grid; gap: 8px; }
+.subrow { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 8px; padding: 8px; border: 1px solid var(--line, #2a3756); border-radius: 8px; background: rgba(255,255,255,.02); }
+.subrow > input[type=text] { grid-column: 1 / -1; }
+.subtime { flex-direction: row !important; align-items: center; gap: 6px !important; }
+.subtime input { width: 100%; }
+.subrow .link { justify-self: end; grid-column: 1 / -1; }
+.subbtns { display: flex; gap: 8px; flex-wrap: wrap; }

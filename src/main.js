@@ -4,6 +4,8 @@ import { AIRLINES, DEFAULT_AIRLINE } from './data/airlines.js';
 import { greatCircleKm, estimateFlightMinutes, formatDuration } from './flight.js';
 import { exportMp4, canvasToPng, downloadBlob, supportsMp4Export } from './exporter.js';
 import { renderFlightAudio, scaleBuffer } from './sound.js';
+import { mixAudio, decodeAudioFile } from './mixer.js';
+import { drawOverlays, fillTokens, INTRO_TEMPLATES, OUTRO_TEMPLATES } from './overlays.js';
 
 const $ = (id) => document.getElementById(id);
 const DEFAULT_ORIGIN = 'ICN-T1';
@@ -25,6 +27,11 @@ const state = {
   t: 0,
   exporting: false,
 };
+
+// 영상 전체 길이 = 비행 시간 + 마지막 장면 연장. state.t는 비행 시간 기준(0~1)을 넘어 연장 구간까지 이어진다.
+const holdSec = () => +($('outroHold')?.value || 0);
+const totalSec = () => state.duration + holdSec();
+const tMax = () => totalSec() / state.duration;
 
 let data, scene, hudCtx;
 const ASPECTS = { '16:9': [16, 9], '9:16': [9, 16], '1:1': [1, 1] };
@@ -261,12 +268,13 @@ function syncPreviewSize() {
 }
 
 function renderPreview() {
-  const info = scene.renderAt(state.t, state.t * state.duration);
+  const sec = state.t * state.duration;
+  const info = scene.renderAt(Math.min(state.t, 1), sec);
   hudCtx.clearRect(0, 0, hudCanvas.width, hudCanvas.height);
   drawHud(hudCtx, hudCanvas.width, hudCanvas.height, info, meta);
-  const total = state.duration, cur = state.t * total;
-  $('clock').textContent = `${fmt(cur)} / ${fmt(total)}`;
-  $('scrub').value = Math.round(state.t * 1000);
+  drawOverlays(hudCtx, hudCanvas.width, hudCanvas.height, sec, totalSec(), storyCfg(), meta);
+  $('clock').textContent = `${fmt(sec)} / ${fmt(totalSec())}`;
+  $('scrub').value = Math.round((state.t / tMax()) * 1000);
 }
 const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
@@ -279,9 +287,10 @@ function loop(now) {
     audioTick();
     if (state.playing) {
       state.t += dt / state.duration;
-      if (state.t >= 1.12) state.t = 0; // 마지막 장면을 잠시 보여준 뒤 반복
+      if (recorder.on && state.t >= tMax()) stopRecording();
+      if (state.t >= tMax() + 0.12) state.t = 0; // 마지막 장면을 잠시 보여준 뒤 반복
     }
-    state.t = Math.min(state.t, 1);
+    state.t = Math.min(state.t, tMax());
     renderPreview();
   }
   requestAnimationFrame(loop);
@@ -296,11 +305,13 @@ function makeComposer(W, H) {
   const ss = $('optSS').checked && Math.min(W, H) <= 1440 ? (Math.min(W, H) <= 1080 ? 1.5 : 1.25) : 1;
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
+  const cfg = storyCfg(); // 저장 중에는 설정을 한 번만 읽는다
   return (t, seconds) => {
     scene.resize(Math.round(W * ss), Math.round(H * ss));
-    const info = scene.renderAt(t, seconds);
+    const info = scene.renderAt(Math.min(t, 1), seconds);
     ctx.drawImage(glCanvas, 0, 0, W, H);
     drawHud(ctx, W, H, info, meta);
+    drawOverlays(ctx, W, H, seconds, totalSec(), cfg, meta);
     return out;
   };
 }
@@ -344,10 +355,11 @@ async function saveMp4() {
     const compose = makeComposer(W, H);
     const t0 = performance.now();
     // 비행 사운드: 사용자가 정한 음량을 곱한 같은 버퍼를 오디오 트랙으로 넣는다
-    const audioBuffer = soundOn() && $('optSoundVideo').checked && soundVolume() > 0 ? scaleBuffer(await getAudioBuffer(), soundVolume() * 1.0) : null;
+    const mixed = $('optSoundVideo').checked && soundVolume() > 0 ? await getAudioBuffer() : null;
+    const audioBuffer = mixed ? scaleBuffer(mixed, soundVolume()) : null;
     const { blob, codec, audio: audioLabel } = await exportMp4({
-      renderFrame: (t) => compose(t, t * state.duration),
-      width: W, height: H, fps, durationSec: state.duration, targetMB, signal: abort.signal, audioBuffer,
+      renderFrame: (u) => compose((u * totalSec()) / state.duration, u * totalSec()),
+      width: W, height: H, fps, durationSec: totalSec(), targetMB, signal: abort.signal, audioBuffer,
       onProgress: ({ done, total, eta }) => {
         $('progressBar').style.width = `${(done / total) * 100}%`;
         $('progressText').textContent = `인코딩 ${done}/${total} 프레임 · 남은 시간 약 ${Math.ceil(eta)}초`;
@@ -370,9 +382,9 @@ async function saveMp4() {
 }
 
 function updateBitrateHint() {
-  const mb = +$('targetMB').value || 50, sec = state.duration, fps = +$('fps').value;
-  const mbps = (mb * 8 * 0.94) / sec;
-  $('bitrateHint').textContent = `목표 ${mb}MB · ${sec}초 → 약 ${mbps.toFixed(1)} Mbps (${fps}fps). 화면이 단순한 구간이 많으면 실제 용량이 목표보다 작게 나올 수 있고, 해상도·fps를 올리면 같은 용량에서 더 선명해집니다.`;
+  const mb = +$('targetMB').value || 50, fps = +$('fps').value;
+  const mbps = (mb * 8 * 0.94) / totalSec();
+  $('bitrateHint').textContent = `목표 ${mb}MB · ${totalSec()}초 → 약 ${mbps.toFixed(1)} Mbps (${fps}fps). 화면이 단순한 구간이 많으면 실제 용량이 목표보다 작게 나올 수 있고, 해상도·fps를 올리면 같은 용량에서 더 선명해집니다.`;
 }
 
 function setBusy(busy, msg) {
@@ -380,12 +392,17 @@ function setBusy(busy, msg) {
   if (msg) $('exportNote').textContent = msg;
 }
 
-// ── 비행 사운드 ───────────────────────────────────────────────────────
-// 엔진음을 오프라인으로 한 번 합성해 버퍼로 만든 뒤, 미리보기에서는 재생 위치에 맞춰 재생하고 MP4에는 같은 버퍼를 오디오 트랙으로 넣는다.
-const audio = { ctx: null, gain: null, src: null, buf: null, bufKey: '', rendering: null, starting: false, startedAt: 0, startOffset: 0 };
-const soundOn = () => $('optSound').checked;
+// ── 사운드 (엔진음 + 배경음악 + 내레이션) ─────────────────────────────────
+// 엔진음은 오프라인으로 한 번 합성하고, 배경음악·내레이션과 믹스한 버퍼를 만든다.
+// 미리보기는 이 버퍼를 재생 위치에 맞춰 재생하고, MP4에는 같은 버퍼를 오디오 트랙으로 넣는다.
+const audio = { ctx: null, gain: null, src: null, buf: null, bufKey: '', rendering: null, starting: false, startedAt: 0, startOffset: 0, ver: 0, engine: null, engineKey: '', muted: false };
+const tracks = { bgm: null, narr: null }; // { name, buffer }
+const recorder = { on: false, mr: null, stream: null, chunks: [] };
+const hasAnyAudio = () => $('optSound').checked || !!tracks.bgm || !!tracks.narr;
+const soundOn = () => !audio.muted && hasAnyAudio();
 const soundVolume = () => +$('soundVol').value / 100;
-const audioKey = () => [state.originId, state.destId, state.duration, $('optIntro').checked].join('|');
+const engineKey = () => [state.originId, state.destId, state.duration, $('optIntro').checked].join('|');
+const audioKey = () => [engineKey(), totalSec(), audio.ver].join('|');
 
 function applyVolume() {
   if (audio.gain) audio.gain.gain.value = soundOn() ? soundVolume() : 0;
@@ -401,14 +418,26 @@ function unlockAudio() {
   audio.ctx.resume?.();
   applyVolume();
 }
+async function getEngineBuffer() {
+  const key = engineKey();
+  if (audio.engine && audio.engineKey === key) return audio.engine;
+  const b = await renderFlightAudio({ duration: state.duration, stateAt: (t) => scene.flightState(t) });
+  audio.engine = b; audio.engineKey = key;
+  return b;
+}
+/** 현재 설정으로 믹스한 오디오 (소리가 하나도 없으면 null) */
 function getAudioBuffer() {
   const key = audioKey();
-  if (audio.buf && audio.bufKey === key) return Promise.resolve(audio.buf);
+  if (audio.buf !== undefined && audio.bufKey === key) return Promise.resolve(audio.buf);
   if (audio.rendering && audio.rendering.key === key) return audio.rendering.promise;
-  const promise = renderFlightAudio({ duration: state.duration, stateAt: (t) => scene.flightState(t) }).then((b) => {
-    if (audioKey() === key) { audio.buf = b; audio.bufKey = key; }
-    return b;
-  });
+  const promise = (async () => {
+    const engine = $('optSound').checked ? { buffer: await getEngineBuffer(), gain: +$('engVol').value / 100 } : null;
+    const bgm = tracks.bgm ? { buffer: tracks.bgm.buffer, gain: +$('bgmVol').value / 100, fadeIn: +$('bgmIn').value, fadeOut: +$('bgmOut').value, loop: $('bgmLoop').checked } : null;
+    const nar = tracks.narr ? { buffer: tracks.narr.buffer, gain: +$('narrVol').value / 100, start: +$('narrStart').value } : null;
+    const mixed = await mixAudio({ totalSec: totalSec(), engine, bgm, narr: nar, duck: { on: $('optDuck').checked, depth: +$('duckAmt').value / 100 } });
+    if (audioKey() === key) { audio.buf = mixed; audio.bufKey = key; }
+    return mixed;
+  })();
   audio.rendering = { key, promise };
   return promise;
 }
@@ -422,7 +451,7 @@ async function startAudioAt(sec) {
   audio.starting = true;
   try {
     const buf = await getAudioBuffer();
-    if (!state.playing || !soundOn() || state.exporting) return;
+    if (!buf || !state.playing || !soundOn() || state.exporting || recorder.on) return;
     stopAudio();
     const src = audio.ctx.createBufferSource();
     src.buffer = buf;
@@ -439,13 +468,154 @@ async function startAudioAt(sec) {
 /** 매 프레임: 재생 중이면 애니메이션 위치와 소리 위치를 맞춘다 */
 function audioTick() {
   if (!audio.ctx) return;
-  const want = soundOn() && state.playing && !state.exporting && soundVolume() > 0;
+  const want = soundOn() && state.playing && !state.exporting && !recorder.on && soundVolume() > 0;
   if (!want) { if (audio.src) stopAudio(); return; }
-  if (state.t >= 1) return; // 마지막 장면 유지 구간: 소리는 자연스럽게 끝난다
+  if (state.t >= tMax()) return; // 마지막 장면 유지 구간: 소리는 자연스럽게 끝난다
   const sec = state.t * state.duration;
   if (!audio.src) { startAudioAt(sec); return; }
   const pos = audio.startOffset + (audio.ctx.currentTime - audio.startedAt);
   if (audio.srcKey !== audioKey() || Math.abs(pos - sec) > 0.25) startAudioAt(sec);
+}
+
+/** 배경음악·내레이션 파일/녹음 UI */
+function wireAudioTracks() {
+  const fmtVal = { bgmIn: (v) => `${v}초`, bgmOut: (v) => `${v}초`, bgmVol: (v) => `${v}%`, narrVol: (v) => `${v}%`, narrStart: (v) => `${(+v).toFixed(1)}초`, duckAmt: (v) => `${v}%`, engVol: (v) => `${v}%` };
+  const outId = { bgmIn: 'bgmInOut', bgmOut: 'bgmOutOut', bgmVol: 'bgmVolOut', narrVol: 'narrVolOut', narrStart: 'narrStartOut', duckAmt: 'duckOut', engVol: 'engVolOut' };
+  for (const id of Object.keys(fmtVal)) $(id).addEventListener('input', (e) => { $(outId[id]).textContent = fmtVal[id](e.target.value); });
+  // 마스터 음량을 제외한 사운드 설정이 바뀌면 믹스를 다시 만든다
+  const sec = document.querySelector('[data-sec="sound"]');
+  const bump = (e) => { if (e.target.id !== 'soundVol') { audio.ver++; unlockAudio(); } };
+  sec.addEventListener('input', bump); sec.addEventListener('change', bump);
+
+  const sync = () => {
+    for (const [kind, nameId, clrId] of [['bgm', 'bgmName', 'bgmClear'], ['narr', 'narrName', 'narrClear']]) {
+      $(nameId).textContent = tracks[kind] ? `${tracks[kind].name} (${tracks[kind].buffer.duration.toFixed(1)}초)` : '선택 안 됨';
+      $(clrId).hidden = !tracks[kind];
+    }
+    applyVolume(); updateSummaries?.();
+  };
+  const load = async (kind, file) => {
+    if (!file) return;
+    $('exportNote').textContent = `${file.name} 불러오는 중…`;
+    try {
+      tracks[kind] = { name: file.name, buffer: await decodeAudioFile(file) };
+      $('exportNote').textContent = `${kind === 'bgm' ? '배경음악' : '내레이션'} 적용: ${file.name}`;
+    } catch (e) {
+      $('exportNote').textContent = `오디오 파일을 읽을 수 없습니다 (${file.name}). mp3, m4a, wav 파일을 사용해 주세요.`;
+      console.error(e);
+    }
+    audio.ver++; sync();
+  };
+  $('bgmFile').onchange = (e) => { load('bgm', e.target.files[0]); e.target.value = ''; };
+  $('narrFile').onchange = (e) => { load('narr', e.target.files[0]); e.target.value = ''; };
+  $('bgmClear').onclick = () => { tracks.bgm = null; audio.ver++; sync(); };
+  $('narrClear').onclick = () => { tracks.narr = null; audio.ver++; sync(); };
+  $('narrRec').onclick = () => (recorder.on ? stopRecording() : startRecording());
+  recorder.sync = sync;
+  sync();
+}
+
+async function startRecording() {
+  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') { $('exportNote').textContent = '이 브라우저에서는 녹음을 사용할 수 없습니다. 음성 파일을 선택해 주세요.'; return; }
+  try {
+    recorder.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+  } catch { $('exportNote').textContent = '마이크 사용이 허용되지 않았습니다. 브라우저 주소창에서 마이크 권한을 허용해 주세요.'; return; }
+  recorder.chunks = [];
+  recorder.mr = new MediaRecorder(recorder.stream);
+  recorder.mr.ondataavailable = (e) => e.data.size && recorder.chunks.push(e.data);
+  recorder.mr.onstop = async () => {
+    recorder.stream.getTracks().forEach((t) => t.stop());
+    recorder.on = false; $('narrRec').textContent = '● 녹음'; state.playing = false; $('play').textContent = '▶';
+    try {
+      tracks.narr = { name: '녹음한 내레이션', buffer: await decodeAudioFile(new Blob(recorder.chunks, { type: recorder.mr.mimeType })) };
+      $('narrStart').value = 0; $('narrStartOut').textContent = '0.0초';
+      $('exportNote').textContent = '내레이션을 녹음했습니다. 영상 처음부터 들어갑니다.';
+    } catch (e) { $('exportNote').textContent = '녹음을 읽을 수 없습니다.'; console.error(e); }
+    audio.ver++; recorder.sync();
+  };
+  stopAudio();
+  state.t = 0; state.playing = true; $('play').textContent = '❚❚';
+  recorder.on = true; $('narrRec').textContent = '■ 녹음 중지';
+  recorder.mr.start();
+}
+function stopRecording() { if (recorder.mr?.state === 'recording') recorder.mr.stop(); }
+
+// ── 인트로 · 아웃트로 · 자막 ─────────────────────────────────────────────
+const story = { subs: [], dirty: true, cfg: null, logo: null };
+function storyCfg() {
+  if (story.cfg && !story.dirty) return story.cfg;
+  story.dirty = false;
+  const part = (p) => ({ tpl: $(`${p}Tpl`).value, title: $(`${p}Title`).value, sub: $(`${p}Sub`).value, dur: +$(`${p}Dur`).value });
+  story.cfg = {
+    color: $('storyColor').value, logo: story.logo, logoWater: $('logoWater').checked,
+    intro: part('intro'), outro: part('outro'),
+    subs: $('optSubs').checked ? story.subs.map((x) => ({ ...x })) : [],
+    subPos: $('subPos').value, subBg: $('subBg').checked, subSize: +$('subSize').value / 100,
+  };
+  return story.cfg;
+}
+
+function renderSubList() {
+  const box = $('subList');
+  box.innerHTML = '';
+  story.subs.forEach((sub, i) => {
+    const row = document.createElement('div'); row.className = 'subrow';
+    const txt = document.createElement('input'); txt.type = 'text'; txt.value = sub.text; txt.placeholder = '자막 내용 ({도착} 같은 값 사용 가능)';
+    txt.oninput = () => { sub.text = txt.value; story.dirty = true; };
+    const mk = (key, label) => {
+      const l = document.createElement('label'); l.className = 'subtime'; l.append(label);
+      const n = document.createElement('input'); n.type = 'number'; n.min = 0; n.max = 120; n.step = 0.1; n.value = sub[key];
+      n.oninput = () => { sub[key] = Math.max(0, +n.value || 0); story.dirty = true; };
+      l.append(n); return l;
+    };
+    const del = document.createElement('button'); del.type = 'button'; del.className = 'link'; del.textContent = '삭제';
+    del.onclick = () => { story.subs.splice(i, 1); story.dirty = true; renderSubList(); updateSummaries?.(); };
+    row.append(txt, mk('start', '시작 '), mk('end', '끝 '), del);
+    box.appendChild(row);
+  });
+  if (!story.subs.length) { const e = document.createElement('p'); e.className = 'hint'; e.textContent = '자막이 없습니다. “자막 추가” 또는 “노선 자막 자동 생성”을 눌러 보세요.'; box.appendChild(e); }
+}
+
+function autoSubtitles() {
+  const D = totalSec(), r = (v) => Math.round(v * 10) / 10;
+  story.subs = [
+    { text: '{출발}에서 출발합니다', start: r(D * 0.04), end: r(D * 0.3) },
+    { text: '{거리} · 약 {시간} 비행', start: r(D * 0.34), end: r(D * 0.62) },
+    { text: '{도착}에 곧 도착합니다', start: r(D * 0.68), end: r(D * 0.94) },
+  ];
+  story.dirty = true; renderSubList(); updateSummaries?.();
+}
+
+function wireStory() {
+  for (const [id, list] of [['introTpl', INTRO_TEMPLATES], ['outroTpl', OUTRO_TEMPLATES]]) {
+    $(id).innerHTML = list.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+  }
+  for (const [id, out, f] of [['introDur', 'introDurOut', (v) => `${v}초`], ['outroDur', 'outroDurOut', (v) => `${v}초`], ['outroHold', 'holdOut', (v) => `${v}초`], ['subSize', 'subSizeOut', (v) => `${v}%`]]) {
+    $(id).addEventListener('input', (e) => { $(out).textContent = f(e.target.value); });
+  }
+  const dirty = () => { story.dirty = true; };
+  document.querySelector('[data-sec="story"]').addEventListener('input', dirty);
+  document.querySelector('[data-sec="story"]').addEventListener('change', dirty);
+  $('outroHold').addEventListener('input', () => { audio.ver++; updateBitrateHint(); });
+  $('subAdd').onclick = () => {
+    const last = story.subs.at(-1);
+    const start = last ? last.end : 0;
+    story.subs.push({ text: '', start, end: Math.round(Math.min(totalSec(), start + 3) * 10) / 10 });
+    story.dirty = true; renderSubList(); updateSummaries?.();
+  };
+  $('subAuto').onclick = autoSubtitles;
+  $('optSubs').addEventListener('change', () => updateSummaries?.());
+  // 채널 로고
+  $('logoFile').onchange = (e) => {
+    const f = e.target.files[0]; e.target.value = '';
+    if (!f) return;
+    const img = new Image();
+    img.onload = () => { story.logo = img; $('logoName').textContent = f.name; $('logoClear').hidden = false; story.dirty = true; };
+    img.onerror = () => { $('exportNote').textContent = '이미지를 읽을 수 없습니다.'; };
+    img.src = URL.createObjectURL(f);
+  };
+  $('logoClear').onclick = () => { story.logo = null; $('logoName').textContent = '선택 안 됨'; $('logoClear').hidden = true; story.dirty = true; };
+  renderSubList();
 }
 
 // ── 시점 컨트롤러 ─────────────────────────────────────────────────────
@@ -577,6 +747,9 @@ function setupPanel() {
     t('sumDepth', `${$('depth').value}%${$('optShadow').checked ? ' · 그림자' : ''}`);
     const maps = ['optIntro', 'optBorders', 'optCountries', 'optClouds', 'optHd'].filter((id) => $(id).checked).length;
     t('sumMap', `${maps}/5 켜짐`);
+    const sn = ['introTpl', 'outroTpl'].map((id) => ($(id).value === 'none' ? 'OFF' : 'ON'));
+    t('sumStory', `인트로 ${sn[0]} · 아웃트로 ${sn[1]} · 자막 ${$('optSubs').checked ? story.subs.length : 0}개`);
+    t('sumSound', soundOn() || hasAnyAudio() ? [audio.muted ? '음소거' : `${$('soundVol').value}%`, $('optSound').checked && '엔진', tracks.bgm && '음악', tracks.narr && '내레이션'].filter(Boolean).join(' · ') : 'OFF');
     t('sumOutput', `${$('aspect').value} · ${q} · ${state.duration}초 · ${$('fps').value}fps · 사운드 ${soundOn() ? $('soundVol').value + '%' : 'OFF'}`);
   };
   panel.addEventListener('input', () => updateSummaries());
@@ -610,13 +783,13 @@ function wirePointOptions() {
   bind('optDestBox');
   $('startView').onchange = () => scene.setOptions({ startView: $('startView').value });
   // 사운드
-  $('optSound').onchange = () => { unlockAudio(); applyVolume(); };
   const setVol = (v) => { $('soundVol').value = v; $('soundVolQ').value = v; $('soundVolOut').textContent = `${v}%`; $('soundVolQ').title = `음량 ${v}%`; applyVolume(); updateSummaries?.(); };
   $('soundVol').oninput = (e) => { unlockAudio(); setVol(e.target.value); };
-  $('soundVolQ').oninput = (e) => { unlockAudio(); if (+e.target.value > 0 && !soundOn()) $('optSound').checked = true; setVol(e.target.value); };
-  $('soundBtn').onclick = () => { $('optSound').checked = !soundOn(); unlockAudio(); applyVolume(); updateSummaries?.(); };
+  $('soundVolQ').oninput = (e) => { unlockAudio(); if (+e.target.value > 0) audio.muted = false; setVol(e.target.value); };
+  $('soundBtn').onclick = () => { audio.muted = !audio.muted; if (!audio.muted && soundVolume() === 0) setVol(60); unlockAudio(); applyVolume(); updateSummaries?.(); };
   document.addEventListener('pointerdown', unlockAudio, { once: true });
   document.addEventListener('keydown', unlockAudio, { once: true });
+  wireAudioTracks();
   applyVolume();
   $('depth').oninput = (e) => {
     $('depthOut').textContent = `${e.target.value}%`;
@@ -654,7 +827,7 @@ async function init() {
   data = await (await fetch('data/airports.json')).json();
   scene = new GlobeScene(glCanvas);
   hudCtx = hudCanvas.getContext('2d');
-  window.__app = { scene, state, get meta() { return meta; }, compose: (W, H) => makeComposer(W, H), ensureAssets };
+  window.__app = { scene, state, get meta() { return meta; }, compose: (W, H) => makeComposer(W, H), ensureAssets, getAudioBuffer, totalSec, scaleBuffer, storyCfg };
 
   buildAirlineChips(); buildOrigins(); buildRegions(); buildCountries(); buildDestinations(); updateStepLocks();
   syncPreviewSize();
@@ -668,6 +841,7 @@ async function init() {
   // 영상/이미지 저장 시에는 목표값으로 즉시 맞춘다.
   wireView();
   wirePointOptions();
+  wireStory();
   setupPanel();
   syncViewUi();
   $('optIntro').onchange = () => scene.setOptions({ globeIntro: $('optIntro').checked });
@@ -688,7 +862,7 @@ async function init() {
   updateBitrateHint();
   $('aspect').onchange = $('quality').onchange = syncPreviewSize;
   $('play').onclick = () => { state.playing = !state.playing; $('play').textContent = state.playing ? '❚❚' : '▶'; };
-  $('scrub').oninput = (e) => { state.playing = false; $('play').textContent = '▶'; state.t = e.target.value / 1000; };
+  $('scrub').oninput = (e) => { state.playing = false; $('play').textContent = '▶'; state.t = (e.target.value / 1000) * tMax(); };
   $('savePng').onclick = savePng;
   $('saveMp4').onclick = saveMp4;
   $('cancel').onclick = () => abort?.abort();
