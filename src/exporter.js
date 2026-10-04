@@ -44,15 +44,35 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
  * @param renderFrame (t01, frameIndex) => canvas  — 해당 시각의 완성된 프레임 캔버스
  * @param targetMB    목표 파일 크기 (MB). 비트레이트를 여기서 역산한다.
  */
-export async function exportMp4({ renderFrame, width, height, fps, durationSec, targetMB, onProgress, signal }) {
+const AUDIO_BITRATE = 128000;
+
+/** 사용 가능한 오디오 코덱 선택: AAC 우선(호환성), 없으면 Opus */
+async function pickAudioCodec(sampleRate) {
+  if (typeof AudioEncoder === 'undefined' || typeof AudioData === 'undefined') return null;
+  for (const c of [{ codec: 'mp4a.40.2', mux: 'aac', label: 'AAC' }, { codec: 'opus', mux: 'opus', label: 'Opus' }]) {
+    try {
+      const r = await AudioEncoder.isConfigSupported({ codec: c.codec, sampleRate, numberOfChannels: 2, bitrate: AUDIO_BITRATE });
+      if (r.supported) return { ...c, config: r.config };
+    } catch { /* 다음 코덱 */ }
+  }
+  return null;
+}
+
+export async function exportMp4({ renderFrame, width, height, fps, durationSec, targetMB, onProgress, signal, audioBuffer = null }) {
   if (!supportsMp4Export()) throw new Error('이 브라우저는 WebCodecs를 지원하지 않습니다. 최신 Chrome/Edge를 사용해 주세요.');
   const total = Math.round(durationSec * fps);
   // 컨테이너 오버헤드·비트레이트 편차를 감안해 목표의 약 94%를 영상에 배정
-  const bitrate = Math.floor((targetMB * 1024 * 1024 * 8 * 0.94) / durationSec);
+  const audioCfg = audioBuffer ? await pickAudioCodec(audioBuffer.sampleRate) : null;
+  const bitrate = Math.floor((targetMB * 1024 * 1024 * 8 * 0.94) / durationSec) - (audioCfg ? AUDIO_BITRATE : 0);
   const picked = await pickCodec(width, height, fps, bitrate);
 
   const target = new ArrayBufferTarget();
-  const muxer = new Muxer({ target, video: { codec: picked.mux, width, height, frameRate: fps }, fastStart: 'in-memory' });
+  const muxer = new Muxer({
+    target,
+    video: { codec: picked.mux, width, height, frameRate: fps },
+    ...(audioCfg ? { audio: { codec: audioCfg.mux, numberOfChannels: 2, sampleRate: audioBuffer.sampleRate } } : {}),
+    fastStart: 'in-memory',
+  });
   let error = null;
   const encoder = new VideoEncoder({
     output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
@@ -78,8 +98,30 @@ export async function exportMp4({ renderFrame, width, height, fps, durationSec, 
   await encoder.flush();
   if (error) throw error;
   encoder.close();
+
+  // 오디오 트랙 (비행 사운드)
+  if (audioCfg) {
+    onProgress?.({ phase: 'audio', done: total, total, eta: 0 });
+    const aenc = new AudioEncoder({ output: (chunk, meta) => muxer.addAudioChunk(chunk, meta), error: (e) => { error = e; } });
+    aenc.configure(audioCfg.config);
+    const sr = audioBuffer.sampleRate, ch0 = audioBuffer.getChannelData(0);
+    const ch1 = audioBuffer.numberOfChannels > 1 ? audioBuffer.getChannelData(1) : ch0;
+    const FR = 4096;
+    for (let off = 0; off < audioBuffer.length; off += FR) {
+      const n = Math.min(FR, audioBuffer.length - off);
+      const data = new Float32Array(n * 2);
+      data.set(ch0.subarray(off, off + n), 0);
+      data.set(ch1.subarray(off, off + n), n);
+      const ad = new AudioData({ format: 'f32-planar', sampleRate: sr, numberOfFrames: n, numberOfChannels: 2, timestamp: Math.round((off / sr) * 1e6), data });
+      aenc.encode(ad);
+      ad.close();
+    }
+    await aenc.flush();
+    aenc.close();
+    if (error) throw error;
+  }
   muxer.finalize();
   const blob = new Blob([target.buffer], { type: 'video/mp4' });
   onProgress?.({ phase: 'done', done: total, total, eta: 0 });
-  return { blob, codec: picked.label, bitrate };
+  return { blob, codec: picked.label, bitrate, audio: audioCfg ? audioCfg.label : null };
 }

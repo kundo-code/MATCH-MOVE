@@ -3,6 +3,7 @@ import { drawHud, FONT } from './hud.js';
 import { AIRLINES, DEFAULT_AIRLINE } from './data/airlines.js';
 import { greatCircleKm, estimateFlightMinutes, formatDuration } from './flight.js';
 import { exportMp4, canvasToPng, downloadBlob, supportsMp4Export } from './exporter.js';
+import { renderFlightAudio, scaleBuffer } from './sound.js';
 
 const $ = (id) => document.getElementById(id);
 const DEFAULT_ORIGIN = 'ICN-T1';
@@ -129,12 +130,12 @@ function buildDestinations() {
   const all = airportsInCountry();
   const list = all.filter((a) => !q || [a.iata, a.icao, a.en, a.ko, a.city].join(' ').toLowerCase().includes(q));
   const sel = $('dest');
-  sel.innerHTML = list.map((a) => `<option value="${a.id}">${a.ko || a.en} · ${a.iata}</option>`).join('');
-  // 모든 공항이 스크롤 없이 한 번에 보이도록 목록 길이를 공항 수에 맞춘다
-  sel.size = Math.max(3, list.length);
-  if (list.some((a) => a.id === state.destId)) sel.value = state.destId;
-  else sel.selectedIndex = -1;
-  sel.onchange = () => { state.destId = sel.value; applyFlight(); };
+  // 국가 선택과 같은 드롭다운. 검색어를 입력하면 목록이 좁혀진다 (가나다순)
+  const current = list.some((a) => a.id === state.destId) ? state.destId : '';
+  sel.innerHTML = `<option value="" disabled ${current ? '' : 'selected'}>${list.length ? '공항을 선택하세요' : '검색 결과가 없습니다'}</option>` +
+    list.map((a) => `<option value="${a.id}">${a.ko || a.en} · ${a.iata}</option>`).join('');
+  sel.value = current;
+  sel.onchange = () => { if (sel.value) { state.destId = sel.value; applyFlight(); } };
   $('stpAirportHint').textContent = state.countryId ? `가나다순 · ${list.length}${q ? `/${all.length}` : ''}곳` : '';
 }
 
@@ -147,7 +148,7 @@ function updateStepLocks() {
   $('dest').disabled = !countryOk;
   $('search').disabled = !countryOk;
   $('stpCountryHint').textContent = regionOk && !countryOk ? '← 국가를 선택하세요' : '';
-  if (!countryOk) { $('dest').innerHTML = '<option disabled>국가를 먼저 선택하세요</option>'; $('dest').size = 3; }
+  if (!countryOk) $('dest').innerHTML = '<option value="" disabled selected>국가를 먼저 선택하세요</option>';
 }
 
 // ── 비행 정보 계산 ────────────────────────────────────────────────────
@@ -237,6 +238,7 @@ function loop(now) {
   last = now;
   if (!state.exporting) {
     stepView(dt);
+    audioTick();
     if (state.playing) {
       state.t += dt / state.duration;
       if (state.t >= 1.12) state.t = 0; // 마지막 장면을 잠시 보여준 뒤 반복
@@ -303,9 +305,11 @@ async function saveMp4() {
     await ensureAssets();
     const compose = makeComposer(W, H);
     const t0 = performance.now();
-    const { blob, codec } = await exportMp4({
+    // 비행 사운드: 사용자가 정한 음량을 곱한 같은 버퍼를 오디오 트랙으로 넣는다
+    const audioBuffer = soundOn() && $('optSoundVideo').checked && soundVolume() > 0 ? scaleBuffer(await getAudioBuffer(), soundVolume() * 1.0) : null;
+    const { blob, codec, audio: audioLabel } = await exportMp4({
       renderFrame: (t) => compose(t, t * state.duration),
-      width: W, height: H, fps, durationSec: state.duration, targetMB, signal: abort.signal,
+      width: W, height: H, fps, durationSec: state.duration, targetMB, signal: abort.signal, audioBuffer,
       onProgress: ({ done, total, eta }) => {
         $('progressBar').style.width = `${(done / total) * 100}%`;
         $('progressText').textContent = `인코딩 ${done}/${total} 프레임 · 남은 시간 약 ${Math.ceil(eta)}초`;
@@ -314,7 +318,7 @@ async function saveMp4() {
     downloadBlob(blob, `${baseName()}.mp4`);
     const sec = Math.round((performance.now() - t0) / 1000);
     const mb = blob.size / 1024 / 1024;
-    $('exportNote').textContent = `저장 완료: ${mb.toFixed(1)} MB · ${W}×${H} · ${fps}fps · ${codec} · 소요 ${sec}초` +
+    $('exportNote').textContent = `저장 완료: ${mb.toFixed(1)} MB · ${W}×${H} · ${fps}fps · ${codec}${audioLabel ? ` + 사운드(${audioLabel})` : ''} · 소요 ${sec}초` +
       (mb < targetMB * 0.7 ? ' — 목표보다 작게 나왔습니다. 해상도나 fps를 올리면 용량을 더 활용할 수 있어요.' : '');
   } catch (e) {
     $('exportNote').textContent = e.name === 'AbortError' ? '영상 저장을 취소했습니다.' : `영상 저장 실패: ${e.message}`;
@@ -336,6 +340,74 @@ function updateBitrateHint() {
 function setBusy(busy, msg) {
   $('savePng').disabled = $('saveMp4').disabled = busy;
   if (msg) $('exportNote').textContent = msg;
+}
+
+// ── 비행 사운드 ───────────────────────────────────────────────────────
+// 엔진음을 오프라인으로 한 번 합성해 버퍼로 만든 뒤, 미리보기에서는 재생 위치에 맞춰 재생하고 MP4에는 같은 버퍼를 오디오 트랙으로 넣는다.
+const audio = { ctx: null, gain: null, src: null, buf: null, bufKey: '', rendering: null, starting: false, startedAt: 0, startOffset: 0 };
+const soundOn = () => $('optSound').checked;
+const soundVolume = () => +$('soundVol').value / 100;
+const audioKey = () => [state.originId, state.destId, state.duration, $('optIntro').checked].join('|');
+
+function applyVolume() {
+  if (audio.gain) audio.gain.gain.value = soundOn() ? soundVolume() : 0;
+  $('soundBtn').textContent = soundOn() && soundVolume() > 0 ? '🔊' : '🔇';
+}
+/** 사용자가 처음 화면을 누를 때 오디오를 켠다 (브라우저 자동재생 정책) */
+function unlockAudio() {
+  if (!audio.ctx) {
+    audio.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    audio.gain = audio.ctx.createGain();
+    audio.gain.connect(audio.ctx.destination);
+  }
+  audio.ctx.resume?.();
+  applyVolume();
+}
+function getAudioBuffer() {
+  const key = audioKey();
+  if (audio.buf && audio.bufKey === key) return Promise.resolve(audio.buf);
+  if (audio.rendering && audio.rendering.key === key) return audio.rendering.promise;
+  const promise = renderFlightAudio({ duration: state.duration, stateAt: (t) => scene.flightState(t) }).then((b) => {
+    if (audioKey() === key) { audio.buf = b; audio.bufKey = key; }
+    return b;
+  });
+  audio.rendering = { key, promise };
+  return promise;
+}
+function stopAudio() {
+  const src = audio.src;
+  audio.src = null;
+  try { src?.stop(); } catch { /* 이미 끝남 */ }
+}
+async function startAudioAt(sec) {
+  if (!audio.ctx || audio.starting) return;
+  audio.starting = true;
+  try {
+    const buf = await getAudioBuffer();
+    if (!state.playing || !soundOn() || state.exporting) return;
+    stopAudio();
+    const src = audio.ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(audio.gain);
+    const off = clampN(sec, 0, Math.max(0, buf.duration - 0.02));
+    src.start(0, off);
+    src.onended = () => { if (audio.src === src) audio.src = null; };
+    audio.src = src;
+    audio.startedAt = audio.ctx.currentTime;
+    audio.startOffset = off;
+    audio.srcKey = audioKey();
+  } finally { audio.starting = false; }
+}
+/** 매 프레임: 재생 중이면 애니메이션 위치와 소리 위치를 맞춘다 */
+function audioTick() {
+  if (!audio.ctx) return;
+  const want = soundOn() && state.playing && !state.exporting && soundVolume() > 0;
+  if (!want) { if (audio.src) stopAudio(); return; }
+  if (state.t >= 1) return; // 마지막 장면 유지 구간: 소리는 자연스럽게 끝난다
+  const sec = state.t * state.duration;
+  if (!audio.src) { startAudioAt(sec); return; }
+  const pos = audio.startOffset + (audio.ctx.currentTime - audio.startedAt);
+  if (audio.srcKey !== audioKey() || Math.abs(pos - sec) > 0.25) startAudioAt(sec);
 }
 
 // ── 시점 컨트롤러 ─────────────────────────────────────────────────────
@@ -467,7 +539,7 @@ function setupPanel() {
     t('sumDepth', `${$('depth').value}%${$('optShadow').checked ? ' · 그림자' : ''}`);
     const maps = ['optIntro', 'optBorders', 'optCountries', 'optClouds', 'optHd'].filter((id) => $(id).checked).length;
     t('sumMap', `${maps}/5 켜짐`);
-    t('sumOutput', `${$('aspect').value} · ${q} · ${state.duration}초 · ${$('fps').value}fps`);
+    t('sumOutput', `${$('aspect').value} · ${q} · ${state.duration}초 · ${$('fps').value}fps · 사운드 ${soundOn() ? $('soundVol').value + '%' : 'OFF'}`);
   };
   panel.addEventListener('input', () => updateSummaries());
   panel.addEventListener('change', () => updateSummaries());
@@ -499,6 +571,13 @@ function wirePointOptions() {
   bind('optOriginBox');
   bind('optDestBox');
   $('startView').onchange = () => scene.setOptions({ startView: $('startView').value });
+  // 사운드
+  $('optSound').onchange = () => { unlockAudio(); applyVolume(); };
+  $('soundVol').oninput = (e) => { $('soundVolOut').textContent = `${e.target.value}%`; applyVolume(); };
+  $('soundBtn').onclick = () => { $('optSound').checked = !soundOn(); unlockAudio(); applyVolume(); updateSummaries?.(); };
+  document.addEventListener('pointerdown', unlockAudio, { once: true });
+  document.addEventListener('keydown', unlockAudio, { once: true });
+  applyVolume();
   $('depth').oninput = (e) => {
     $('depthOut').textContent = `${e.target.value}%`;
     scene.setOptions({ depth: +e.target.value / 100 });
@@ -554,6 +633,11 @@ async function init() {
   $('optIntro').onchange = () => scene.setOptions({ globeIntro: $('optIntro').checked });
   ['outMin', 'backMin'].forEach((id) => $(id).addEventListener('input', reflow));
   $('search').addEventListener('input', buildDestinations);
+  $('search').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    const first = [...$('dest').options].find((o) => o.value);
+    if (first) { $('dest').value = first.value; state.destId = first.value; applyFlight(); }
+  });
   $('optBorders').onchange = (e) => scene.setOptions({ borders: e.target.checked });
   $('optClouds').onchange = (e) => scene.setOptions({ clouds: e.target.checked });
   $('optCountries').onchange = (e) => { scene.setOptions({ countryLabels: e.target.checked }); refreshMeta(); };

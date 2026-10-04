@@ -210,6 +210,7 @@ export class GlobeScene {
     this.rollout = path.rollout;
     this.phiTouch = path.touchdown;
     this.sTouch = path.touchdown / path.phi;
+    this.maxAlt = Math.max(1e-6, ...path.pts.map((q) => Math.hypot(q[0], q[1], q[2]) - GROUND_R));
 
     // 경로선은 위성 타일 패치(renderOrder 1~3)보다 나중에 그려 육지·바다 어디서나 끊김 없이 보이게 한다
     const addLine = (geo, mat, order, dashed = false) => {
@@ -350,6 +351,14 @@ export class GlobeScene {
       phi = this.phiTouch + this.rollout * (1 - (1 - q) ** 2);
     }
     return phi / this.pathPhi;
+  }
+
+  /** 사운드용 비행 상태: p(비행 진행 0~1), altN(최고 고도 대비 0~1), 접지 여부 */
+  flightState(t) {
+    const s = this.flightProgress(t);
+    const alt = this.#pointAt(s).length() - GROUND_R;
+    const p = clamp((t - this.#flyStart()) / (this.#flyEnd() - this.#flyStart()), 0, 1);
+    return { t, s, p, altN: clamp(alt / this.maxAlt, 0, 1), touchdown: s >= this.sTouch - 1e-6 };
   }
 
   #pointAt(s) {

@@ -59,8 +59,8 @@
               <li class="stp" id="stpAirport">
                 <span class="stp-n">3</span>
                 <div class="stp-c"><div class="stp-t">공항 <small id="stpAirportHint"></small></div>
-                  <input id="search" type="search" placeholder="공항명·도시·IATA 검색" />
-                  <select id="dest" size="8"></select>
+                  <input id="search" type="search" placeholder="직접 입력해서 검색 (공항명·도시·IATA) — Enter로 첫 결과 선택" />
+                  <select id="dest"></select>
                 </div>
               </li>
             </ol>
@@ -268,6 +268,17 @@
               </div>
             </div>
             <div class="sg">
+              <div class="sg-title">사운드</div>
+              <div class="sg-body">
+                <label class="check"><input type="checkbox" id="optSound" checked /> 비행 사운드 (이륙·상승·착륙 엔진음)</label>
+                <label class="zoomrow">음량 <output id="soundVolOut">60%</output>
+                  <input id="soundVol" type="range" min="0" max="100" step="1" value="60" />
+                </label>
+                <label class="check"><input type="checkbox" id="optSoundVideo" checked /> 저장하는 영상(MP4)에 사운드 포함</label>
+                <p class="hint">엔진 출력·음량·음높이가 이륙, 상승, 순항, 하강, 접지(충격음·타이어음·역추력) 단계에 맞춰 자동으로 변합니다. 위 음량은 전체 크기입니다. 브라우저 정책상 화면을 한 번 클릭해야 미리보기에서 소리가 납니다.</p>
+              </div>
+            </div>
+            <div class="sg">
               <div class="sg-title">품질</div>
               <div class="sg-body">
                 <label class="check"><input type="checkbox" id="optSS" checked /> 고품질 렌더링 <small>(슈퍼샘플링 · 저장 시간이 늘어남)</small></label>
@@ -301,6 +312,7 @@
       <div class="transport">
         <button id="play" class="btn icon" aria-label="재생/일시정지">❚❚</button>
         <input id="scrub" type="range" min="0" max="1000" value="0" />
+        <button id="soundBtn" class="btn icon" type="button" aria-label="사운드 켜기/끄기" title="사운드 켜기/끄기">🔊</button>
         <label class="switch" title="좌측 하단 정보 카드 표시/숨김"><input type="checkbox" id="optCard" checked /><i></i><span>정보 카드</span></label>
         <span id="clock">0:00 / 0:15</span>
       </div>
