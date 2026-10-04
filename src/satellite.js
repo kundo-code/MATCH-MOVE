@@ -57,7 +57,7 @@ async function buildPatch(lat, lon, zoom, n, renderOrder, maxAnisotropy) {
   tex.anisotropy = maxAnisotropy;
 
   const seg = 32, pos = [], uv = [], idx = [];
-  const r = 1 + 0.00015 * renderOrder;
+  const r = 1 + 0.00003 * renderOrder; // 최대 1.00009 — 기체·경로선보다 항상 아래
   for (let j = 0; j <= seg; j++) for (let i = 0; i <= seg; i++) {
     const [px, py, pz] = latLonToVec(yToLat(y0 + (n * j) / seg, zoom), xToLon(x0 + (n * i) / seg, zoom), r);
     pos.push(px, py, pz);

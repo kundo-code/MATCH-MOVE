@@ -4,7 +4,7 @@ import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
 import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
-import { latLonToVec, buildFlightPath, buildGroundTrack, bearingDeg, greatCircleKm } from './flight.js';
+import { latLonToVec, buildArc, buildFlightPath, buildGroundTrack, bearingDeg, greatCircleKm, GROUND_R } from './flight.js';
 import { buildPlane, buildShadow } from './plane.js';
 import { buildAirportPatches } from './satellite.js';
 
@@ -59,7 +59,7 @@ export class GlobeScene {
     this.maxAniso = this.renderer.capabilities.getMaxAnisotropy();
     this.flight = null;
     this.patches = new Map();
-    this.options = { borders: true, clouds: true, hdTiles: true, countryLabels: true, markers3d: false, cardShown: true, mapZoom: 1 };
+    this.options = { borders: true, clouds: true, hdTiles: true, countryLabels: true, markers3d: false, cardShown: true, mapZoom: 1, globeIntro: false };
     this.size = { w: 1280, h: 720 };
     this.#buildStatic();
   }
@@ -154,7 +154,7 @@ export class GlobeScene {
     this.chord = this.A.distanceTo(this.B);
     this.routeBearing = bearingDeg(origin, dest);
 
-    const path = buildFlightPath(origin, dest, { segments: 480, lift: 0.2 });
+    const path = buildFlightPath(origin, dest, { segments: 480, lift: 0.1 });
     this.arc = path.pts;
     this.segments = path.pts.length - 1;
     this.theta = path.theta;
@@ -163,19 +163,47 @@ export class GlobeScene {
     this.phiTouch = path.touchdown;
     this.sTouch = path.touchdown / path.phi;
 
-    // 출발~도착을 잇는 지표면 직선(대권) 점선 — 빨간색
+    // 경로선은 위성 타일 패치(renderOrder 1~3)보다 나중에 그려 육지·바다 어디서나 끊김 없이 보이게 한다
+    const addLine = (geo, mat, order, dashed = false) => {
+      const line = new Line2(geo, mat);
+      if (dashed) line.computeLineDistances();
+      line.frustumCulled = false;
+      line.renderOrder = order;
+      this.dynamic.add(line);
+      return line;
+    };
+    const col = new THREE.Color(routeColor);
+    const flat = (pts) => pts.flat();
+
+    // 비행 고도를 따라가는 항공사 색 점선 (전체 경로)
+    const full = new LineGeometry(); full.setPositions(flat(this.arc));
+    const fullMat = this.#lineMat({ color: col, linewidth: 2.2, opacity: 0.45, dashed: true, dashSize: 0.01, gapSize: 0.01 });
+    fullMat.userData.dash = [0.05, 0.03];
+    addLine(full, fullMat, 10, true);
+
+    // 귀환 경로: 흰색 점선, 살짝 옆으로 띄운 호
+    const backArc = buildArc(dest, origin, { segments: 160, lift: 0.1, groundLift: 0.0002, offset: this.chord * 0.07 });
+    const back = new LineGeometry(); back.setPositions(flat(backArc));
+    const backMat = this.#lineMat({ color: 0xffffff, linewidth: 1.4, opacity: 0.4, dashed: true, dashSize: 0.01, gapSize: 0.01 });
+    backMat.userData.dash = [0.025, 0.04];
+    addLine(back, backMat, 10, true);
+
+    // 지나온 궤적: 항공사 색 실선 + 글로우
+    this.trailGeo = new LineGeometry(); this.trailGeo.setPositions(flat(this.arc));
+    this.trail = addLine(this.trailGeo, this.#lineMat({ color: col, linewidth: 4.2, opacity: 1 }), 11);
+    this.trailGlow = addLine(this.trailGeo, this.#lineMat({ color: col, linewidth: 11, opacity: 0.22 }), 11);
+
+    // 출발~도착을 잇는 지표면 직선(대권) — 빨간 점선, 투명도 70%
     const ground = new LineGeometry();
     ground.setPositions(buildGroundTrack(origin, dest).flat());
-    const groundMat = this.#lineMat({ color: 0xff3b30, linewidth: 3.2, opacity: 0.95, dashed: true, dashSize: 0.01, gapSize: 0.01 });
+    const groundMat = this.#lineMat({ color: 0xff3b30, linewidth: 3.2, opacity: 0.7, dashed: true, dashSize: 0.01, gapSize: 0.01 });
     groundMat.userData.dash = [0.045, 0.03];
-    const groundLine = new Line2(ground, groundMat);
-    groundLine.computeLineDistances();
-    groundLine.frustumCulled = false;
-    this.dynamic.add(groundLine);
+    addLine(ground, groundMat, 12, true);
 
     this.plane = buildPlane(livery);
     this.dynamic.add(this.plane);
     this.shadow = buildShadow();
+    this.shadow.renderOrder = 6;
     this.dynamic.add(this.shadow);
 
     this.markers = [[origin, 0x4ade80], [dest, 0xffb020]].map(([ap, color]) => {
@@ -186,7 +214,7 @@ export class GlobeScene {
       const ring = mk(new THREE.RingGeometry(0.62, 0.72, 48), 0.9);
       const pulse = mk(new THREE.RingGeometry(0.9, 1.0, 48), 0.6);
       grp.add(dot, ring, pulse);
-      grp.position.copy(n.clone().multiplyScalar(1.0008));
+      grp.position.copy(n.clone().multiplyScalar(1.0003));
       // XY 평면을 접면에 맞춤 (+z → 법선)
       grp.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
       grp.userData = { pulse, n };
@@ -235,9 +263,13 @@ export class GlobeScene {
   }
 
   // ── 타임라인 ────────────────────────────────────────────────────────
+  /** 지구 전체 인트로를 쓰면 이륙이 늦게, 아니면 설정한 지도 범위에서 곧바로 시작 */
+  #flyStart() { return this.options.globeIntro ? TIMELINE.flyStart : 0.06; }
+
   /** 시간 → 경로 진행률 s(0~1). 이륙 가속 → 순항 → 접지 후 감속 활주 */
   flightProgress(t) {
-    const { flyStart, flyEnd, touchdown } = TIMELINE;
+    const { flyEnd, touchdown } = TIMELINE;
+    const flyStart = this.#flyStart();
     const p = clamp((t - flyStart) / (flyEnd - flyStart), 0, 1);
     let phi;
     if (p <= touchdown) {
@@ -280,7 +312,7 @@ export class GlobeScene {
   #cameraState(t, aspect) {
     const { intro, zoomFrom } = TIMELINE;
     const s = this.flightProgress(t);
-    const p = clamp((t - TIMELINE.flyStart) / (TIMELINE.flyEnd - TIMELINE.flyStart), 0, 1);
+    const p = clamp((t - this.#flyStart()) / (TIMELINE.flyEnd - this.#flyStart()), 0, 1);
     const tiltFit = 38;
     const psiFit = this.#fitHeading(aspect);
 
@@ -291,11 +323,12 @@ export class GlobeScene {
       (aspect >= 1 ? need / (TAN_HALF * aspect) : (need * Math.cos(tiltFit * D2R)) / TAN_HALF) / this.options.mapZoom,
       0.03, 3.2,
     );
-    const dOver = Math.max(2.5, dFit * 1.5);
+    // 기본: 사용자가 설정한 지도 범위(dFit)에서 바로 시작. 인트로 옵션을 켜면 지구 전체에서 내려온다
+    const dOver = this.options.globeIntro ? Math.max(2.5, dFit * 1.5) : dFit;
     const dEnd = 0.03;
 
     // 1) 전체 지구 → 경로 전체 샷
-    const a = smoother(t / intro);
+    const a = this.options.globeIntro ? smoother(t / intro) : 1;
     let C = this.M.clone();
     let dist = Math.exp(lerp(Math.log(dOver), Math.log(dFit), a));
     let tilt = lerp(0, tiltFit, a);
@@ -366,7 +399,7 @@ export class GlobeScene {
     const tan = this.#tangentAt(st.s);
     const up = planePos.clone().normalize();
     const pScale = Math.min(0.02, (0.07 + 0.05 * st.z) * st.dist);
-    const altitude = planePos.length() - 1;
+    const altitude = planePos.length() - GROUND_R;
     // 바퀴가 지면에 닿도록 기체 중심을 바퀴 길이만큼 띄운다 (지상에서만 적용)
     planePos.addScaledVector(up, 0.105 * pScale * (1 - smooth(altitude / (0.5 * pScale + 1e-6))));
     this.plane.userData.gear.visible = altitude < 0.0025;
@@ -378,13 +411,18 @@ export class GlobeScene {
     this.plane.matrixWorldNeedsUpdate = true;
 
     // 그림자: 기체 바로 아래 지면. 고도가 높을수록 옅어진다
-    const groundPos = up.clone().multiplyScalar(1.0003);
+    const groundPos = up.clone().multiplyScalar(GROUND_R + 0.00005);
     const fwd = tan.clone().addScaledVector(up, -tan.dot(up)).normalize();
     const gx = new THREE.Vector3().crossVectors(up, fwd).normalize();
     this.shadow.matrixAutoUpdate = false;
     this.shadow.matrix.makeBasis(gx, up, fwd).setPosition(groundPos).scale(new THREE.Vector3(pScale, pScale, pScale));
     this.shadow.matrixWorldNeedsUpdate = true;
     this.shadow.material.opacity = 0.42 * (1 - smooth(altitude / (25 * pScale + 1e-6)));
+
+    // 지나온 궤적
+    const count = Math.floor(st.s * this.segments);
+    this.trail.visible = this.trailGlow.visible = count >= 1;
+    if (count >= 1) this.trailGeo.instanceCount = Math.min(this.segments, count);
 
     // 마커 (거리에 비례한 크기 + 펄스)
     this.markers.forEach((g, i) => {

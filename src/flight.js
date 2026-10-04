@@ -1,5 +1,7 @@
 // 지리·비행 계산 유틸 (구면 좌표는 반지름 1 단위구 기준)
 const D2R = Math.PI / 180;
+/** 지면(활주로) 높이를 나타내는 구 반지름. 위성 타일 패치보다 위에 있어야 기체가 묻히지 않는다. */
+export const GROUND_R = 1.0002;
 const EARTH_KM = 6371;
 
 export function latLonToVec(lat, lon, r = 1) {
@@ -90,7 +92,7 @@ const smoothstep = (t) => { t = Math.min(1, Math.max(0, t)); return t * t * (3 -
  * 구면 위 대권을 φ(라디안)로 샘플링한다. 경로의 끝(φ = theta)이 도착 공항 좌표다.
  * 반환: { pts, theta, phi(=theta), rollout, touchdown(접지 φ) }
  */
-export function buildFlightPath(from, to, { segments = 480, lift = 0.2 } = {}) {
+export function buildFlightPath(from, to, { segments = 480, lift = 0.1 } = {}) {
   const a = latLonToVec(from.lat, from.lon), b = latLonToVec(to.lat, to.lon);
   const theta = Math.acos(Math.min(1, Math.max(-1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2])));
   const n = [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
@@ -116,14 +118,14 @@ export function buildFlightPath(from, to, { segments = 480, lift = 0.2 } = {}) {
   for (let i = 0; i <= segments; i++) {
     const phi = (i / segments) * theta;
     const h = phi <= liftoff || phi >= touchdown ? 0 : Math.min(alt(phi - liftoff), alt(touchdown - phi));
-    const c = Math.cos(phi), s = Math.sin(phi), r = 1 + h;
+    const c = Math.cos(phi), s = Math.sin(phi), r = GROUND_R + h;
     pts.push([(a[0] * c + t0[0] * s) * r, (a[1] * c + t0[1] * s) * r, (a[2] * c + t0[2] * s) * r]);
   }
   return { pts, theta, phi: theta, rollout, touchdown };
 }
 
 /** 지표면(고도 0)을 따라가는 대권 점들 — 지도 위 경로선용 */
-export function buildGroundTrack(from, to, { segments = 200, radius = 1.0007 } = {}) {
+export function buildGroundTrack(from, to, { segments = 200, radius = 1.0003 } = {}) {
   const a = latLonToVec(from.lat, from.lon), b = latLonToVec(to.lat, to.lon);
   const pts = [];
   for (let i = 0; i <= segments; i++) {
