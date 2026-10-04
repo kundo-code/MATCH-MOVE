@@ -12,132 +12,164 @@
 <body>
   <div class="app">
     <aside class="panel">
-      <header>
-        <h1>MATCH-MOVE</h1>
-        <p>출발·도착 공항을 위성지도에 표시하고 비행 영상을 만듭니다</p>
+      <header class="panel-head">
+        <div>
+          <h1>MATCH-MOVE</h1>
+          <p>출발·도착 공항을 위성지도에 표시하고 비행 영상을 만듭니다</p>
+        </div>
+        <div class="head-actions">
+          <button id="expandAll" class="mini" type="button" title="모든 항목 펼치기">펼치기</button>
+          <button id="collapseAll" class="mini" type="button" title="모든 항목 접기">접기</button>
+        </div>
       </header>
 
-      <section>
-        <h2>1. 항공사</h2>
-        <div id="airlines" class="chips airlines"></div>
-      </section>
+      <div class="panel-body">
+        <details class="sec" data-sec="airline" open>
+          <summary><span class="num">1</span><span class="t">항공사</span><span class="sum" id="sumAirline"></span></summary>
+          <div class="sec-body">
+            <div id="airlines" class="chips airlines"></div>
+          </div>
+        </details>
 
-      <section>
-        <h2>2. 출발 공항 <small>대한민국</small></h2>
-        <select id="origin"></select>
-      </section>
+        <details class="sec" data-sec="origin" open>
+          <summary><span class="num">2</span><span class="t">출발 공항</span><span class="sum" id="sumOrigin"></span></summary>
+          <div class="sec-body">
+            <select id="origin"></select>
+            <p class="hint">대한민국 국제공항 8곳 · 인천은 터미널별로 선택</p>
+          </div>
+        </details>
 
-      <section>
-        <h2>3. 도착 공항</h2>
-        <div class="step"><span>① 권역</span><div id="regions" class="chips"></div></div>
-        <div class="step"><span>② 국가</span><select id="country"></select></div>
-        <div class="step"><span>③ 공항</span>
-          <input id="search" type="search" placeholder="선택한 국가 안에서 검색 (공항명·도시·IATA)" />
-          <select id="dest" size="8"></select>
-        </div>
-      </section>
+        <details class="sec" data-sec="dest" open>
+          <summary><span class="num">3</span><span class="t">도착 공항</span><span class="sum" id="sumDest"></span></summary>
+          <div class="sec-body">
+            <div class="step"><span>① 권역</span><div id="regions" class="chips"></div></div>
+            <div class="step"><span>② 국가</span><select id="country"></select></div>
+            <div class="step"><span>③ 공항</span>
+              <input id="search" type="search" placeholder="선택한 국가 안에서 검색 (공항명·도시·IATA)" />
+              <select id="dest" size="8"></select>
+            </div>
+          </div>
+        </details>
 
-      <section>
-        <h2>4. 비행시간 <small>자동 추정 · 직접 입력 가능</small></h2>
-        <div class="times">
-          <label>가는 편 <output id="outAuto"></output><input id="outMin" type="number" min="1" placeholder="분" /></label>
-          <label>오는 편 <output id="backAuto"></output><input id="backMin" type="number" min="1" placeholder="분" /></label>
-        </div>
-        <p class="hint">제트기류(서→동)를 반영한 추정치라 가는 편과 오는 편이 다릅니다. 실제 시간표 값이 있으면 분 단위로 입력하세요.</p>
-      </section>
+        <details class="sec" data-sec="time">
+          <summary><span class="num">4</span><span class="t">비행시간</span><span class="sum" id="sumTime"></span></summary>
+          <div class="sec-body">
+            <div class="times">
+              <label>가는 편 <output id="outAuto"></output><input id="outMin" type="number" min="1" placeholder="분 (직접 입력)" /></label>
+              <label>오는 편 <output id="backAuto"></output><input id="backMin" type="number" min="1" placeholder="분 (직접 입력)" /></label>
+            </div>
+            <p class="hint">제트기류(서→동)를 반영한 추정치라 가는 편과 오는 편이 다릅니다. 실제 시간표 값이 있으면 분 단위로 입력하세요.</p>
+          </div>
+        </details>
 
-      <section>
-        <h2>5. 표시 옵션</h2>
+        <details class="sec" data-sec="view" open>
+          <summary><span class="num">5</span><span class="t">지도 시점</span><span class="sum" id="sumView"></span></summary>
+          <div class="sec-body">
+            <div class="seg" role="tablist" aria-label="편집할 화면">
+              <button type="button" data-viewtab="start" aria-pressed="true">▶ 시작 화면</button>
+              <button type="button" data-viewtab="end" aria-pressed="false">■ 도착 화면</button>
+            </div>
+            <p class="hint2">지금 편집 중: <b id="viewEditing">시작 화면</b> — 탭을 고르면 미리보기가 그 시점으로 이동합니다. 애니메이션은 시작 화면에서 도착 화면으로 자연스럽게 이어집니다.</p>
+            <label class="zoomrow">확대/축소 <output id="mapZoomOut">100%</output>
+              <input id="mapZoom" type="range" min="40" max="500" step="1" value="100" />
+            </label>
+            <label class="zoomrow">회전 <output id="mapRotateOut">0°</output>
+              <input id="mapRotate" type="range" min="-180" max="180" step="1" value="0" />
+            </label>
+            <label class="zoomrow">기울기 <output id="mapTiltOut">38°</output>
+              <input id="mapTilt" type="range" min="0" max="70" step="1" value="38" />
+            </label>
+            <label class="zoomrow">시작 화면 범위
+              <select id="startView">
+                <option value="auto" selected>자동 (동남아는 넓게)</option>
+                <option value="fit">경로에 딱 맞춤</option>
+                <option value="wide">항상 넓게</option>
+              </select>
+            </label>
+            <div class="keys">
+              <span><kbd>드래그</kbd> 지도 이동</span>
+              <span><kbd>Shift+드래그</kbd> 회전·기울기</span>
+              <span><kbd>휠</kbd> 확대/축소</span>
+              <span><kbd>더블클릭</kbd> 초기화</span>
+            </div>
+            <button id="viewReset" class="btn small" type="button">이 화면 초기화</button>
+          </div>
+        </details>
 
-        <div class="optgroup">
-          <h3><i style="background:#4ade80"></i>출발 지점</h3>
-          <label class="check"><input type="checkbox" id="optOriginTarget" checked /> 붉은 타겟 원형</label>
-          <label class="check"><input type="checkbox" id="optOriginBox" checked /> 정보박스 (공항명·국가)</label>
-        </div>
-        <div class="optgroup">
-          <h3><i style="background:#ffb020"></i>도착 지점</h3>
-          <label class="check"><input type="checkbox" id="optDestTarget" checked /> 붉은 타겟 원형</label>
-          <label class="check"><input type="checkbox" id="optDestBox" checked /> 정보박스 (공항명·국가)</label>
-        </div>
+        <details class="sec" data-sec="display">
+          <summary><span class="num">6</span><span class="t">표시 옵션</span><span class="sum" id="sumDisplay"></span></summary>
+          <div class="sec-body">
+            <details class="grp" open>
+              <summary><i class="dot" style="background:#4ade80"></i>출발 지점<span class="sum" id="sumOriginOpt"></span></summary>
+              <label class="check"><input type="checkbox" id="optOriginTarget" checked /> 붉은 타겟 원형</label>
+              <label class="check"><input type="checkbox" id="optOriginBox" checked /> 정보박스 (공항명·국가)</label>
+            </details>
+            <details class="grp" open>
+              <summary><i class="dot" style="background:#ffb020"></i>도착 지점<span class="sum" id="sumDestOpt"></span></summary>
+              <label class="check"><input type="checkbox" id="optDestTarget" checked /> 붉은 타겟 원형</label>
+              <label class="check"><input type="checkbox" id="optDestBox" checked /> 정보박스 (공항명·국가)</label>
+            </details>
+            <details class="grp">
+              <summary><i class="dot ic">✈</i>비행기<span class="sum" id="sumPlane"></span></summary>
+              <label class="zoomrow">기체 크기 <output id="planeSizeOut">100%</output>
+                <input id="planeSize" type="range" min="50" max="300" step="1" value="100" />
+                <small>멀리 축소된 장면에서도 일정한 비율로 보입니다.</small>
+              </label>
+            </details>
+            <details class="grp">
+              <summary><i class="dot ic">◐</i>입체감 · 조명<span class="sum" id="sumDepth"></span></summary>
+              <label class="zoomrow">입체감 강도 <output id="depthOut">70%</output>
+                <input id="depth" type="range" min="0" max="100" step="1" value="70" />
+                <small>측면 조명, 지형 노멀맵(돌출감), 비행기 금속 반사로 입체감을 줍니다. 0%면 평평한 조명입니다.</small>
+              </label>
+              <label class="check"><input type="checkbox" id="optShadow" checked /> 비행기 그림자</label>
+            </details>
+            <details class="grp">
+              <summary><i class="dot ic">▦</i>지도 표시<span class="sum" id="sumMap"></span></summary>
+              <label class="check"><input type="checkbox" id="optIntro" /> 지구 전체 화면에서 시작</label>
+              <label class="check"><input type="checkbox" id="optBorders" checked /> 국경선 (GeoJSON)</label>
+              <label class="check"><input type="checkbox" id="optCountries" checked /> 국가명 라벨</label>
+              <label class="check"><input type="checkbox" id="optClouds" checked /> 구름</label>
+              <label class="check"><input type="checkbox" id="optHd" checked /> 공항 주변 고해상도 위성 타일 <small>(Esri, 온라인)</small></label>
+            </details>
+          </div>
+        </details>
 
-        <div class="optgroup">
-          <h3>비행기</h3>
-          <label class="zoomrow">기체 크기 <output id="planeSizeOut">100%</output>
-            <input id="planeSize" type="range" min="50" max="300" step="1" value="100" />
-            <small>멀리 축소된 장면에서도 일정한 비율로 보입니다. 더 크게/작게 조절할 수 있어요.</small>
-          </label>
-        </div>
+        <details class="sec" data-sec="output" open>
+          <summary><span class="num">7</span><span class="t">출력 설정</span><span class="sum" id="sumOutput"></span></summary>
+          <div class="sec-body">
+            <div class="grid2">
+              <label>화면 비율
+                <select id="aspect">
+                  <option value="16:9" selected>16:9 가로 (유튜브·PC)</option>
+                  <option value="9:16">9:16 세로 (쇼츠·릴스·틱톡)</option>
+                  <option value="1:1">1:1 정사각 (인스타 피드)</option>
+                </select>
+              </label>
+              <label>해상도
+                <select id="quality">
+                  <option value="1080" selected>FHD (짧은 변 1080px)</option>
+                  <option value="1440">QHD (짧은 변 1440px)</option>
+                  <option value="2160">4K (짧은 변 2160px)</option>
+                </select>
+              </label>
+              <label>프레임
+                <select id="fps"><option value="30" selected>30 fps</option><option value="60">60 fps</option></select>
+              </label>
+              <label>목표 용량 (MB)
+                <input id="targetMB" type="number" min="5" max="500" value="50" />
+              </label>
+              <label class="wide">영상 길이 <output id="durationOut">8초</output>
+                <input id="duration" type="range" min="8" max="40" step="1" value="8" />
+              </label>
+            </div>
+            <label class="check"><input type="checkbox" id="optSS" checked /> 고품질 렌더링 <small>(슈퍼샘플링 · 저장 시간이 늘어남)</small></label>
+            <p id="bitrateHint" class="hint"></p>
+          </div>
+        </details>
+      </div>
 
-        <div class="optgroup">
-          <h3>지도 시점</h3>
-          <label class="zoomrow">시작 화면
-            <select id="startView">
-              <option value="auto" selected>자동 (동남아시아는 아시아 전체가 보이는 넓은 화면)</option>
-              <option value="fit">경로에 딱 맞춤</option>
-              <option value="wide">항상 넓게 (아시아 전체)</option>
-            </select>
-          </label>
-          <label class="zoomrow">확대/축소 <output id="mapZoomOut">100%</output>
-            <input id="mapZoom" type="range" min="40" max="300" step="1" value="100" />
-          </label>
-          <label class="zoomrow">회전 <output id="mapRotateOut">0°</output>
-            <input id="mapRotate" type="range" min="-180" max="180" step="1" value="0" />
-          </label>
-          <label class="zoomrow">기울기 <output id="mapTiltOut">38°</output>
-            <input id="mapTilt" type="range" min="0" max="70" step="1" value="38" />
-          </label>
-          <small class="hint2">미리보기에서 <b>드래그</b>=지도 이동(상하좌우), <b>Shift+드래그</b> 또는 <b>우클릭 드래그</b>=회전·기울기, <b>마우스 휠</b>=확대/축소, <b>더블클릭</b>=초기화. 영상은 설정한 시점에서 시작합니다.</small>
-          <button id="viewReset" class="btn small" type="button">시점 초기화</button>
-        </div>
-
-        <div class="optgroup">
-          <h3>입체감 · 조명</h3>
-          <label class="zoomrow">입체감 강도 <output id="depthOut">70%</output>
-            <input id="depth" type="range" min="0" max="100" step="1" value="70" />
-            <small>측면 조명, 지형 노멀맵(돌출감), 비행기 금속 반사로 입체감을 줍니다. 0%면 평평한 조명입니다.</small>
-          </label>
-          <label class="check"><input type="checkbox" id="optShadow" checked /> 비행기 그림자</label>
-        </div>
-
-        <div class="optgroup">
-          <h3>지도 표시</h3>
-          <label class="check"><input type="checkbox" id="optIntro" /> 지구 전체 화면에서 시작 <small>(끄면 설정한 지도 범위에서 바로 시작)</small></label>
-          <label class="check"><input type="checkbox" id="optBorders" checked /> 국경선 (GeoJSON)</label>
-          <label class="check"><input type="checkbox" id="optCountries" checked /> 국가명 라벨</label>
-          <label class="check"><input type="checkbox" id="optClouds" checked /> 구름</label>
-          <label class="check"><input type="checkbox" id="optHd" checked /> 공항 주변 고해상도 위성 타일 <small>(Esri, 온라인)</small></label>
-        </div>
-      </section>
-
-      <section>
-        <h2>6. 출력</h2>
-        <div class="grid2">
-          <label>화면 비율
-            <select id="aspect">
-              <option value="16:9" selected>16:9 가로 (유튜브·PC)</option>
-              <option value="9:16">9:16 세로 (쇼츠·릴스·틱톡)</option>
-              <option value="1:1">1:1 정사각 (인스타 피드)</option>
-            </select>
-          </label>
-          <label>해상도
-            <select id="quality">
-              <option value="1080" selected>FHD (짧은 변 1080px)</option>
-              <option value="1440">QHD (짧은 변 1440px)</option>
-              <option value="2160">4K (짧은 변 2160px)</option>
-            </select>
-          </label>
-          <label>프레임
-            <select id="fps"><option value="30" selected>30 fps</option><option value="60">60 fps</option></select>
-          </label>
-          <label>영상 길이 <output id="durationOut">8초</output>
-            <input id="duration" type="range" min="8" max="40" step="1" value="8" />
-          </label>
-          <label>목표 용량 (MB)
-            <input id="targetMB" type="number" min="5" max="500" value="50" />
-          </label>
-        </div>
-        <label class="check"><input type="checkbox" id="optSS" checked /> 고품질 렌더링 <small>(슈퍼샘플링 · 가장자리가 부드러워지고 저장 시간이 늘어남)</small></label>
-        <p id="bitrateHint" class="hint"></p>
+      <footer class="panel-foot">
         <div class="actions">
           <button id="savePng" class="btn">이미지 저장 (PNG)</button>
           <button id="saveMp4" class="btn primary">영상 저장 (MP4)</button>
@@ -147,7 +179,7 @@
           <div class="row"><span id="progressText"></span><button id="cancel" class="link">취소</button></div>
         </div>
         <p id="exportNote" class="hint"></p>
-      </section>
+      </footer>
     </aside>
 
     <main class="stage-wrap">

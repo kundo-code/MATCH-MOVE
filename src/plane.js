@@ -1,6 +1,6 @@
 // 여객기 3D 모델. 길이 1(기수 +Z), 날개폭 약 0.95. 항공사별 도색은 liveries.js 의 캔버스 텍스처를 입힌다.
 import * as THREE from 'three';
-import { liveryFor, paintFuselage, paintTail, paintFan, paintShadow } from './liveries.js';
+import { liveryFor, paintFuselage, paintTail, paintFan, paintShadow, paintWing } from './liveries.js';
 
 const R = 0.046; // 동체 반지름
 
@@ -53,6 +53,16 @@ function slab(points, thick) {
   return g;
 }
 
+/** 평면(x,z) 기준 UV — 날개처럼 눕혀 놓은 판에 쓴다 */
+function uvFromXZ(g) {
+  const p = g.attributes.position;
+  let minx = Infinity, maxx = -Infinity, minz = Infinity, maxz = -Infinity;
+  for (let i = 0; i < p.count; i++) { minx = Math.min(minx, p.getX(i)); maxx = Math.max(maxx, p.getX(i)); minz = Math.min(minz, p.getZ(i)); maxz = Math.max(maxz, p.getZ(i)); }
+  const uv = new Float32Array(p.count * 2);
+  for (let i = 0; i < p.count; i++) { uv[i * 2] = (p.getX(i) - minx) / (maxx - minx); uv[i * 2 + 1] = (p.getZ(i) - minz) / (maxz - minz); }
+  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+}
+
 function uvFromBounds(g, key = ['x', 'y']) {
   const p = g.attributes.position;
   let minx = Infinity, maxx = -Infinity, miny = Infinity, maxy = -Infinity;
@@ -80,22 +90,41 @@ function nacelle(livery, fanTex) {
   fan.position.z = 0.058;
   grp.add(fan);
   // 중앙 콘
-  const cone = new THREE.Mesh(new THREE.ConeGeometry(0.008, 0.03, 12), new THREE.MeshStandardMaterial({ color: 0xb8bec6, metalness: 0.5, roughness: 0.3 }));
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(0.008, 0.03, 12), new THREE.MeshStandardMaterial({ color: 0xb8bec6, metalness: 0.6, roughness: 0.28 }));
   cone.rotation.x = Math.PI / 2;
   cone.position.z = 0.072;
   grp.add(cone);
-  // 후미 노즐
-  const noz = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.016, 0.02, 14, 1, true), new THREE.MeshStandardMaterial({ color: 0x555b64, roughness: 0.6, side: THREE.DoubleSide }));
+  // 흡입구 립(은색 금속 링) — 엔진 앞쪽 테두리
+  const lip = new THREE.Mesh(new THREE.TorusGeometry(0.0285, 0.0042, 10, 36), new THREE.MeshStandardMaterial({ color: 0xc8ced6, metalness: 0.85, roughness: 0.22 }));
+  lip.position.z = 0.0785;
+  grp.add(lip);
+  // 팬 카울 분할선 · 역추력 장치(트러스트 리버서) 띠 · 후미 배기 노즐
+  const ring = (z, r, w, color, metal = 0.2) => {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(r + 0.0004, r + 0.0004, w, 28, 1, true), new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: metal, side: THREE.DoubleSide }));
+    m.rotation.x = Math.PI / 2;
+    m.position.z = z;
+    grp.add(m);
+  };
+  ring(0.012, 0.0356, 0.0016, 0x58616d);          // 팬 카울 분할선
+  ring(-0.022, 0.0345, 0.034, 0xaeb6c1, 0.35);    // 역추력 장치 구간(조금 어두운 금속 띠)
+  ring(-0.04, 0.0322, 0.0016, 0x58616d);          // 구간 경계선
+  const noz = new THREE.Mesh(new THREE.CylinderGeometry(0.0118, 0.0165, 0.024, 16, 1, true), new THREE.MeshStandardMaterial({ color: 0x3f454e, roughness: 0.5, metalness: 0.6, side: THREE.DoubleSide }));
   noz.rotation.x = Math.PI / 2;
-  noz.position.z = -0.1;
+  noz.position.z = -0.094;
   grp.add(noz);
+  const plug = new THREE.Mesh(new THREE.ConeGeometry(0.0085, 0.032, 12), new THREE.MeshStandardMaterial({ color: 0x2e333a, metalness: 0.6, roughness: 0.45 }));
+  plug.rotation.x = -Math.PI / 2;
+  plug.position.z = -0.1;
+  grp.add(plug);
   return grp;
 }
 
 export function buildPlane(airline) {
   const L = liveryFor(airline);
   const g = new THREE.Group();
-  const grey = new THREE.MeshStandardMaterial({ color: L.wing, emissive: L.wing, emissiveIntensity: 0.22, roughness: 0.5, metalness: 0.1, side: THREE.DoubleSide });
+  const grey = new THREE.MeshStandardMaterial({ color: L.wing, emissive: L.wing, emissiveIntensity: 0.16, roughness: 0.5, metalness: 0.12, side: THREE.DoubleSide });
+  const wingTex = tex(paintWing());
+  const wingMat = new THREE.MeshStandardMaterial({ map: wingTex, color: 0xd2d8df, emissiveMap: wingTex, emissive: 0xffffff, emissiveIntensity: 0.12, roughness: 0.5, metalness: 0.25, side: THREE.DoubleSide });
   const tipMat = new THREE.MeshStandardMaterial({ color: L.winglet, roughness: 0.4, metalness: 0.15, side: THREE.DoubleSide });
 
   // 동체
@@ -108,7 +137,8 @@ export function buildPlane(airline) {
     const wg = slab(wingPlan, 0.014);
     wg.rotateZ(0.085);
     wg.translate(0, -0.03, 0);
-    const w = new THREE.Mesh(wg, grey);
+    uvFromXZ(wg);
+    const w = new THREE.Mesh(wg, wingMat);
     // 윙렛: 날개 끝에서 위로 휘어 올라간 작은 날개
     const lg = new THREE.ShapeGeometry(new THREE.Shape([new THREE.Vector2(0.2, 0), new THREE.Vector2(0.245, 0.078), new THREE.Vector2(0.285, 0.078), new THREE.Vector2(0.255, 0)]));
     lg.rotateY(Math.PI / 2);
@@ -129,7 +159,7 @@ export function buildPlane(airline) {
     eng.scale.setScalar(0.85);
     eng.position.set(side * 0.16, -0.052, 0.012);
     g.add(eng);
-    const pylon = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.034, 0.13), grey);
+    const pylon = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.034, 0.13), new THREE.MeshStandardMaterial({ color: 0x7b8591, roughness: 0.55, metalness: 0.3 }));
     pylon.position.set(side * 0.16, -0.03, -0.01);
     g.add(pylon);
 
@@ -137,7 +167,8 @@ export function buildPlane(airline) {
     const sg = slab([[0.02, 0.0], [0.19, -0.1], [0.19, -0.135], [0.02, -0.095]], 0.009);
     sg.rotateZ(0.05);
     sg.translate(0, 0.03, -0.36);
-    const st = new THREE.Mesh(sg, grey);
+    uvFromXZ(sg);
+    const st = new THREE.Mesh(sg, wingMat);
     st.scale.x = side;
     g.add(st);
   }

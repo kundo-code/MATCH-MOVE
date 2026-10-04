@@ -56,7 +56,7 @@ export function liveryFor(airline) {
   const base = {
     top: airline.body, belly: dark ? airline.body : '#e3e7ec', split: 0.3,
     text: airline.en, textColor: dark ? '#ffffff' : airline.accent, textSize: 64, textS: 0.74,
-    engineTop: '#eef1f5', engineBottom: '#eef1f5', winglet: airline.accent, tail: airline.tail, wing: '#d8dde4',
+    engineTop: '#d3d8df', engineBottom: '#d3d8df', winglet: airline.accent, tail: airline.tail, wing: '#aeb6c1',
     kind: 'generic', airline,
   };
   switch (airline.id) {
@@ -239,5 +239,69 @@ export function paintShadow() {
   ctx.fillStyle = '#000';
   // 위에서 본 기체 실루엣 (기수가 위)
   poly(ctx, [[60, 6], [68, 6], [70, 40], [122, 84], [122, 92], [70, 80], [68, 108], [86, 120], [86, 126], [42, 126], [42, 120], [60, 108], [58, 80], [6, 92], [6, 84], [58, 40]], '#000');
+  return c;
+}
+
+/**
+ * 주날개 윗면 텍스처: 슬랫(앞전), 플랩, 에일러론, 스포일러, 패널 라인으로 조종면 디테일을 표현한다.
+ * 가로 = 날개 뿌리(0) → 끝(1), 세로 = 앞전(위) → 뒷전(아래). 평면 형상(plan)에 맞춰 앞전·뒷전 곡선을 따라 그린다.
+ */
+export function paintWing() {
+  const W = 1024, H = 512;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const ctx = c.getContext('2d');
+  // 날개 평면 형상: 앞전/뒷전의 세로 위치(0=위 … 1=아래)를 u(뿌리→끝)의 함수로
+  const yLE = (u) => 0.836 * u;
+  const yTE = (u) => 0.746 + 0.254 * u;
+  const P = (u, k) => [u * W, (yLE(u) + k * (yTE(u) - yLE(u))) * H]; // k: 0=앞전 … 1=뒷전
+
+  const base = ctx.createLinearGradient(0, 0, W, 0);
+  base.addColorStop(0, '#9aa3af');
+  base.addColorStop(0.55, '#8b94a1');
+  base.addColorStop(1, '#76808d');
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, W, H);
+
+  const strip = (u0, u1, k0, k1, color) => {
+    ctx.beginPath();
+    const a = P(u0, k0), b = P(u1, k0), d = P(u1, k1), e = P(u0, k1);
+    ctx.moveTo(...a); ctx.lineTo(...b); ctx.lineTo(...d); ctx.lineTo(...e); ctx.closePath();
+    ctx.fillStyle = color; ctx.fill();
+  };
+  const line = (u0, k0, u1, k1, alpha = 0.6, w = 2.2) => {
+    ctx.beginPath(); ctx.moveTo(...P(u0, k0)); ctx.lineTo(...P(u1, k1));
+    ctx.strokeStyle = `rgba(36,44,56,${alpha})`; ctx.lineWidth = w; ctx.stroke();
+  };
+
+  // 앞전 슬랫: 한 단계 어두운 띠 + 구획선
+  strip(0.03, 0.99, 0, 0.09, '#6c7581');
+  for (let u = 0.1; u < 0.99; u += 0.095) line(u, 0, u, 0.09, 0.5);
+  line(0.03, 0.09, 0.99, 0.09, 0.55);
+  // 내측 플랩(뒷전 38%): 구획선 + 플랩 트랙 페어링
+  strip(0.05, 0.56, 0.62, 1, '#a0a8b4');
+  for (const u of [0.05, 0.2, 0.34, 0.46, 0.56]) line(u, 0.62, u, 1, 0.65, 2.6);
+  line(0.05, 0.62, 0.56, 0.62, 0.55);
+  ctx.fillStyle = 'rgba(70,78,90,0.55)';
+  for (const u of [0.13, 0.27, 0.4, 0.51]) { const [x, y] = P(u, 0.96); ctx.beginPath(); ctx.ellipse(x, y, 16, 7, 0.1, 0, Math.PI * 2); ctx.fill(); }
+  // 에일러론(외측 뒷전)
+  strip(0.62, 0.93, 0.66, 1, '#7d8693');
+  line(0.62, 0.66, 0.62, 1, 0.65, 2.6); line(0.93, 0.66, 0.93, 1, 0.65, 2.6); line(0.62, 0.66, 0.93, 0.66, 0.55);
+  // 스포일러 패널
+  for (let i = 0; i < 6; i++) {
+    const u0 = 0.1 + i * 0.085, u1 = u0 + 0.075;
+    ctx.beginPath();
+    ctx.moveTo(...P(u0, 0.46)); ctx.lineTo(...P(u1, 0.46)); ctx.lineTo(...P(u1, 0.62)); ctx.lineTo(...P(u0, 0.62)); ctx.closePath();
+    ctx.fillStyle = 'rgba(70,78,90,0.3)'; ctx.fill();
+    ctx.strokeStyle = 'rgba(36,44,56,0.5)'; ctx.lineWidth = 1.6; ctx.stroke();
+  }
+  // 연료탱크 점검 패널
+  ctx.strokeStyle = 'rgba(36,44,56,0.28)'; ctx.lineWidth = 1.4;
+  for (let u = 0.08; u < 0.95; u += 0.06) line(u, 0.15, u, 0.44, 0.22, 1.2);
+  line(0.04, 0.3, 0.96, 0.3, 0.2, 1.2);
+  // 날개 끝은 조금 더 어둡게 (끝단 페어링)
+  const tip = ctx.createLinearGradient(W * 0.9, 0, W, 0);
+  tip.addColorStop(0, 'rgba(60,68,80,0)'); tip.addColorStop(1, 'rgba(60,68,80,0.35)');
+  ctx.fillStyle = tip; ctx.fillRect(W * 0.9, 0, W * 0.1, H);
   return c;
 }

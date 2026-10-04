@@ -61,7 +61,7 @@ export class GlobeScene {
     this.maxAniso = this.renderer.capabilities.getMaxAnisotropy();
     this.flight = null;
     this.patches = new Map();
-    this.options = { borders: true, clouds: true, hdTiles: true, countryLabels: true, originTarget: true, destTarget: true, cardShown: true, mapZoom: 1, mapRotate: 0, mapTilt: 38, panX: 0, panY: 0, planeSize: 1, globeIntro: false, depth: 0.7, planeShadow: true, duration: 8, wideStart: false, startView: 'auto' };
+    this.options = { borders: true, clouds: true, hdTiles: true, countryLabels: true, originTarget: true, destTarget: true, cardShown: true, mapZoom: 1, mapRotate: 0, mapTilt: 38, panX: 0, panY: 0, planeSize: 1, globeIntro: false, endZoom: 1, endRotate: 0, endTilt: 52, endPanX: 0, endPanY: 0, depth: 0.7, planeShadow: true, duration: 8, wideStart: false, startView: 'auto' };
     this.size = { w: 1280, h: 720 };
     this.tmpCam = new THREE.PerspectiveCamera(VFOV, 16 / 9, 0.001, 100);
     // 기체에 금속 반사·하이라이트를 주는 환경 맵 (스튜디오 조명)
@@ -415,10 +415,11 @@ export class GlobeScene {
     const sv = this.options.startView;
     const wide = sv === 'wide' || (sv === 'auto' && this.options.wideStart);
     const wideCtx = wide ? 0.78 + 0.95 * this.chord : 0;
-    const dFit = clamp(Math.max(dFitRaw, wideCtx) / this.options.mapZoom, 0.03, 3.2);
+    const dFit = clamp(Math.max(dFitRaw, wideCtx) / this.options.mapZoom, 0.008, 3.2);
     // 기본: 사용자가 설정한 지도 범위(dFit)에서 바로 시작. 인트로 옵션을 켜면 지구 전체에서 내려온다
     const dOver = this.options.globeIntro ? Math.max(2.5, dFit * 1.5) : dFit;
-    const dEnd = 0.05; // 도착 직전에도 비행기·타겟·정보박스·지나온 경로 일부가 함께 보이도록 이전(0.03)보다 넓게
+    // 도착 화면의 기본 거리(비행기·타겟·정보박스·지나온 경로 일부가 함께 보이는 정도). 도착 확대/축소 설정으로 배율 조절
+    const dEnd = Math.max(0.006, 0.05 / this.options.endZoom);
 
     // 1) (옵션) 전체 지구 → 설정한 지도 범위
     const a = this.options.globeIntro ? smoother(t / intro) : 1;
@@ -438,8 +439,9 @@ export class GlobeScene {
     const arriveBearing = this.#bearingOfTangent(this.#pointAt(this.sTouch), this.#tangentAt(this.sTouch));
     const westbound = Math.sin(this.routeBearing * D2R) < 0;
     const psiEnd = (arriveBearing - (westbound ? 225 : 135) + 720) % 360;
-    const tilt = lerp(tilt0, 52, zs);
-    const psi = lerpAngle(psi0, psiEnd, zs);
+    // 시작 시점(mapTilt/mapRotate) → 도착 시점(endTilt/endRotate) 으로 전 구간에 걸쳐 보간
+    const tilt = lerp(tilt0, this.options.endTilt, zs);
+    const psi = lerpAngle(psi0, (psiEnd + this.options.endRotate + 360) % 360, zs);
 
     // 카메라 중심/거리: '이미 지나온 경로 일부(Q) ↔ 도착지(B)'가 함께 보이도록 잡아, 줌인 중에도 경로가 충분히 길게 보인다.
     //  · 초반(Q=출발지)에는 두 공항의 중간에 고정, 이후 점차 도착지 쪽으로 이동
@@ -458,21 +460,24 @@ export class GlobeScene {
     const rel2 = (travel - psi) * D2R;
     const exR = rem * Math.abs(Math.sin(rel2));
     const eyR = rem * Math.abs(Math.cos(rel2)) * Math.cos(tilt * D2R);
-    const zoomEff = lerp(this.options.mapZoom, 1, zs);
+    const zoomEff = lerp(this.options.mapZoom, this.options.endZoom, zs);
     const reqDist = (Math.max((exR * margin) / (TAN_HALF * aspect), (eyR * margin) / TAN_HALF) / zoomEff) * 0.95;
     const N = 10; // 소프트 맥스: 두 값이 교차해도 꺾이지 않는다
     let dist = Math.pow(Math.pow(easeDist, N) + Math.pow(reqDist, N), 1 / N);
-    if (this.options.panX || this.options.panY) {
-      // 사용자가 드래그로 옮긴 지도 위치 (화면 높이 단위). 줌인이 진행되면서 서서히 사라진다.
-      const { n, e } = localFrame(C);
-      const ps = psi * D2R;
-      const head = n.clone().multiplyScalar(Math.cos(ps)).addScaledVector(e, Math.sin(ps));
-      const right = new THREE.Vector3().crossVectors(head, C).normalize();
-      const unit = dist * 2 * TAN_HALF * (1 - zs);
-      C = C.clone()
-        .addScaledVector(right, this.options.panX * unit)
-        .addScaledVector(head, (this.options.panY * unit) / Math.max(0.45, Math.cos(tilt * D2R)))
-        .normalize();
+    {
+      // 드래그로 옮긴 지도 위치(화면 높이 단위): 시작 설정 → 도착 설정으로 보간
+      const px = lerp(this.options.panX, this.options.endPanX, zs), py = lerp(this.options.panY, this.options.endPanY, zs);
+      if (px || py) {
+        const { n, e } = localFrame(C);
+        const ps = psi * D2R;
+        const head = n.clone().multiplyScalar(Math.cos(ps)).addScaledVector(e, Math.sin(ps));
+        const right = new THREE.Vector3().crossVectors(head, C).normalize();
+        const unit = dist * 2 * TAN_HALF;
+        C = C.clone()
+          .addScaledVector(right, px * unit)
+          .addScaledVector(head, (py * unit) / Math.max(0.45, Math.cos(tilt * D2R)))
+          .normalize();
+      }
     }
 
     // 도착 공항이 화면 중앙이 아니라 진행 방향 쪽 아래 구석에 놓이도록 카메라 중심을 반대편(위·안쪽)으로 서서히 비켜 둔다
@@ -491,17 +496,23 @@ export class GlobeScene {
     // 화면 밖으로 나가지 않도록, 필요한 만큼만 거리를 늘린다. 거리·방향과 무관하게 같은 규칙이 적용된다.
     {
       let d = dist;
+      const relax = Math.max(1, zoomEff); // 사용자가 확대했으면 화면 밖으로 나가는 것을 허용
       for (let it = 0; it < 3; it++) {
-        const [nb, np, nq] = this.#ndc([this.B, P, Q], C, d, tilt, psi, aspect);
+        const [nb, np, nq, na] = this.#ndc([this.B, P, Q, this.A], C, d, tilt, psi, aspect);
         let f = 1;
         const need = (v, bound) => { f = Math.max(f, Math.abs(v) / bound); };
         // 도착지: 좌우 78%, 아래 카드(-0.50)와 위 정보박스(+0.50) 사이
-        need(nb.x, 0.78);
-        f = Math.max(f, nb.y > 0 ? nb.y / 0.5 : -nb.y / 0.5);
+        need(nb.x, 0.78 * relax);
+        f = Math.max(f, nb.y > 0 ? nb.y / (0.5 * relax) : -nb.y / (0.5 * relax));
+        // 출발지(초반에만): 좌우 80%, 위 정보박스·상단 항공 박스와 겹치지 않도록 위쪽 55% 이내
+        if (s < 0.3) {
+          need(na.x, 0.8 * relax);
+          f = Math.max(f, na.y > 0 ? na.y / (0.55 * relax) : -na.y / (0.6 * relax));
+        }
         // 비행기: 화면 안쪽 90%
-        need(np.x, 0.9); need(np.y, 0.85);
+        need(np.x, 0.9 * relax); need(np.y, 0.85 * relax);
         // 지나온 경로 일부(Q): 도착이 중앙으로 수렴하면 화면 밖으로 나가도 된다
-        if (wC < 0.5) { need(nq.x, 1.0); need(nq.y, 1.0); }
+        if (wC < 0.5) { need(nq.x, 1.0 * relax); need(nq.y, 1.0 * relax); }
         if (f <= 1.001) break;
         d *= Math.min(f, 2.2);
       }

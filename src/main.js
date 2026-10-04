@@ -150,6 +150,7 @@ function refreshMeta() {
   $('outAuto').textContent = formatDuration(meta.outAuto);
   $('backAuto').textContent = formatDuration(meta.backAuto);
   meta.tilesActive = scene?.hasTiles && $('optHd').checked;
+  updateSummaries?.();
 }
 
 function applyFlight() {
@@ -157,6 +158,7 @@ function applyFlight() {
   refreshMeta();
   // 동남아시아는 아시아 전체가 보이는 넓은 시작 화면이 기본
   scene.setOptions({ wideStart: state.regionId === 'southeast-asia', duration: state.duration });
+  updateSummaries?.();
   scene.setFlight({ origin: o, dest: d, livery: a, routeColor: a.route });
   const badge = $('tilesBadge');
   badge.hidden = !$('optHd').checked;
@@ -298,27 +300,42 @@ function setBusy(busy, msg) {
 }
 
 // ── 시점 컨트롤러 ─────────────────────────────────────────────────────
-const VIEW_DEFAULT = { zoom: 1, rot: 0, tilt: 38, panX: 0, panY: 0 };
-const view = { cur: { ...VIEW_DEFAULT }, tgt: { ...VIEW_DEFAULT } };
+// 시작 화면과 도착 화면을 각각 설정한다 (확대/축소·회전·기울기·이동). 애니메이션은 시작 → 도착으로 보간된다.
+// 슬라이더·휠·드래그는 '편집 중인 화면'의 목표값(tgt)만 바꾸고, 매 프레임 현재값(cur)이 부드럽게 따라간다.
+// 영상/이미지 저장 시에는 목표값으로 즉시 맞춘다.
+let updateSummaries = null; // 아코디언 요약 갱신 (아래에서 구현)
+const VIEW_DEFAULT = {
+  start: { zoom: 1, rot: 0, tilt: 38, panX: 0, panY: 0 },
+  end: { zoom: 1, rot: 0, tilt: 52, panX: 0, panY: 0 },
+};
+const cloneView = (v) => ({ start: { ...v.start }, end: { ...v.end } });
+const view = { cur: cloneView(VIEW_DEFAULT), tgt: cloneView(VIEW_DEFAULT), active: 'start' };
+const ZOOM_MIN = 0.4, ZOOM_MAX = 5; // 40% ~ 500%
 const clampN = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const wrap180 = (d) => ((((d + 180) % 360) + 360) % 360) - 180;
+const activeTgt = () => view.tgt[view.active];
 
 function pushView() {
-  const c = view.cur;
-  scene.setOptions({ mapZoom: c.zoom, mapRotate: wrap180(c.rot), mapTilt: c.tilt, panX: c.panX, panY: c.panY });
+  const s = view.cur.start, e = view.cur.end;
+  scene.setOptions({
+    mapZoom: s.zoom, mapRotate: wrap180(s.rot), mapTilt: s.tilt, panX: s.panX, panY: s.panY,
+    endZoom: e.zoom, endRotate: wrap180(e.rot), endTilt: e.tilt, endPanX: e.panX, endPanY: e.panY,
+  });
 }
 /** 현재값이 목표값을 지수 감쇠로 따라간다 (프레임 속도와 무관) */
 function stepView(dt) {
   const k = 1 - Math.exp(-Math.min(dt, 0.1) * 12);
-  const c = view.cur, t = view.tgt;
-  c.zoom = Math.exp(Math.log(c.zoom) + (Math.log(t.zoom) - Math.log(c.zoom)) * k);
-  for (const key of ['rot', 'tilt', 'panX', 'panY']) c[key] += (t[key] - c[key]) * k;
+  for (const key of ['start', 'end']) {
+    const c = view.cur[key], t = view.tgt[key];
+    c.zoom = Math.exp(Math.log(c.zoom) + (Math.log(t.zoom) - Math.log(c.zoom)) * k);
+    for (const f of ['rot', 'tilt', 'panX', 'panY']) c[f] += (t[f] - c[f]) * k;
+  }
   pushView();
 }
-function snapView() { Object.assign(view.cur, view.tgt); pushView(); }
+function snapView() { view.cur = cloneView(view.tgt); pushView(); }
 
 function syncViewUi() {
-  const t = view.tgt;
+  const t = activeTgt();
   $('mapZoom').value = Math.round(t.zoom * 100);
   $('mapZoomOut').textContent = `${Math.round(t.zoom * 100)}%`;
   const r = Math.round(wrap180(t.rot));
@@ -326,35 +343,54 @@ function syncViewUi() {
   $('mapRotateOut').textContent = `${r}°`;
   $('mapTilt').value = Math.round(t.tilt);
   $('mapTiltOut').textContent = `${Math.round(t.tilt)}°`;
+  for (const tab of document.querySelectorAll('[data-viewtab]')) tab.setAttribute('aria-pressed', tab.dataset.viewtab === view.active);
+  $('viewEditing').textContent = view.active === 'start' ? '시작 화면' : '도착 화면';
+  updateSummaries?.();
+}
+
+/** 편집할 화면을 고르고, 미리보기를 그 시점(처음/끝)으로 옮겨 바로 확인할 수 있게 한다 */
+function setActiveView(name) {
+  view.active = name;
+  state.playing = false;
+  $('play').textContent = '▶';
+  state.t = name === 'start' ? 0.07 : 1; // 처음 장면은 정보 UI가 서서히 나타나기 전(0)이 아니라 막 보이는 시점
+  syncViewUi();
 }
 
 function wireView() {
-  const t = view.tgt;
-  $('mapZoom').oninput = (e) => { t.zoom = clampN(+e.target.value / 100, 0.4, 3); syncViewUi(); };
+  $('mapZoom').oninput = (e) => { activeTgt().zoom = clampN(+e.target.value / 100, ZOOM_MIN, ZOOM_MAX); syncViewUi(); };
   // 슬라이더 값(-180~180)에 가장 가까운 각도로 이동 → 경계를 넘을 때 반대로 한 바퀴 돌지 않는다
-  $('mapRotate').oninput = (e) => { t.rot += wrap180(+e.target.value - wrap180(t.rot)); syncViewUi(); };
-  $('mapTilt').oninput = (e) => { t.tilt = clampN(+e.target.value, 0, 70); syncViewUi(); };
-  const reset = () => { Object.assign(t, VIEW_DEFAULT); t.rot = view.cur.rot + wrap180(0 - wrap180(view.cur.rot)); syncViewUi(); };
+  $('mapRotate').oninput = (e) => { const t = activeTgt(); t.rot += wrap180(+e.target.value - wrap180(t.rot)); syncViewUi(); };
+  $('mapTilt').oninput = (e) => { activeTgt().tilt = clampN(+e.target.value, 0, 70); syncViewUi(); };
+  const reset = () => {
+    const key = view.active, t = activeTgt();
+    Object.assign(t, VIEW_DEFAULT[key]);
+    t.rot = view.cur[key].rot + wrap180(0 - wrap180(view.cur[key].rot));
+    syncViewUi();
+  };
   $('viewReset').onclick = reset;
+  for (const tab of document.querySelectorAll('[data-viewtab]')) tab.onclick = () => setActiveView(tab.dataset.viewtab);
   stage.addEventListener('dblclick', reset);
   stage.addEventListener('contextmenu', (e) => e.preventDefault());
   // 휠: 변화량에 비례해 연속적으로 (트랙패드의 작은 값도 부드럽게)
   stage.addEventListener('wheel', (e) => {
     e.preventDefault();
     const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
-    t.zoom = clampN(t.zoom * Math.exp(-dy * 0.0015), 0.4, 3);
+    const t = activeTgt();
+    t.zoom = clampN(t.zoom * Math.exp(-dy * 0.0015), ZOOM_MIN, ZOOM_MAX);
     syncViewUi();
   }, { passive: false });
-  // 드래그: 기본 = 지도 이동, Shift 또는 우클릭 = 회전(좌우)·기울기(상하)
+  // 드래그: 기본 = 지도 이동, Shift 또는 우클릭 = 회전(좌우)·기울기(상하). 편집 중인 화면(시작/도착)에 적용된다
   let drag = null;
   stage.addEventListener('pointerdown', (e) => {
     const rect = stage.getBoundingClientRect();
-    drag = { x: e.clientX, y: e.clientY, h: rect.height, mode: e.shiftKey || e.button === 2 ? 'rotate' : 'pan', start: { ...t } };
+    drag = { x: e.clientX, y: e.clientY, h: rect.height, mode: e.shiftKey || e.button === 2 ? 'rotate' : 'pan', start: { ...activeTgt() } };
     stage.setPointerCapture(e.pointerId);
     stage.classList.add('dragging');
   });
   stage.addEventListener('pointermove', (e) => {
     if (!drag) return;
+    const t = activeTgt();
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
     if (drag.mode === 'pan') {
       t.panX = drag.start.panX - dx / drag.h;
@@ -368,6 +404,50 @@ function wireView() {
   const end = () => { drag = null; stage.classList.remove('dragging'); };
   stage.addEventListener('pointerup', end);
   stage.addEventListener('pointercancel', end);
+}
+
+/** 좌측 패널: 항목별 한 줄 요약 + 접기/펼치기 상태 기억 */
+function setupPanel() {
+  const panel = document.querySelector('.panel');
+  const onoff = (id) => ($(id).checked ? 'ON' : 'OFF');
+  const t = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+  updateSummaries = () => {
+    if (!meta) return;
+    const q = { '1080': 'FHD', '1440': 'QHD', '2160': '4K' }[$('quality').value];
+    t('sumAirline', meta.airline.ko);
+    t('sumOrigin', meta.origin.ko || meta.origin.en);
+    t('sumDest', `${meta.destCountry.ko} · ${meta.dest.ko || meta.dest.en}`);
+    t('sumTime', `가는 편 ${formatDuration(meta.outMin)} · 오는 편 ${formatDuration(meta.backMin)}`);
+    t('sumView', `시작 ${Math.round(view.tgt.start.zoom * 100)}% → 도착 ${Math.round(view.tgt.end.zoom * 100)}%`);
+    t('sumDisplay', `입체감 ${$('depth').value}% · 기체 ${$('planeSize').value}%`);
+    t('sumOriginOpt', `타겟 ${onoff('optOriginTarget')} · 박스 ${onoff('optOriginBox')}`);
+    t('sumDestOpt', `타겟 ${onoff('optDestTarget')} · 박스 ${onoff('optDestBox')}`);
+    t('sumPlane', `${$('planeSize').value}%`);
+    t('sumDepth', `${$('depth').value}%${$('optShadow').checked ? ' · 그림자' : ''}`);
+    const maps = ['optIntro', 'optBorders', 'optCountries', 'optClouds', 'optHd'].filter((id) => $(id).checked).length;
+    t('sumMap', `${maps}/5 켜짐`);
+    t('sumOutput', `${$('aspect').value} · ${q} · ${state.duration}초 · ${$('fps').value}fps`);
+  };
+  panel.addEventListener('input', () => updateSummaries());
+  panel.addEventListener('change', () => updateSummaries());
+
+  // 접기 상태 기억 (저장소를 쓸 수 없는 환경에서도 동작)
+  const KEY = 'match-move.panel.v1';
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch { /* 무시 */ }
+  const all = [...panel.querySelectorAll('details')];
+  all.forEach((d, i) => {
+    const id = d.dataset.sec || `grp${i}`;
+    d.dataset.key = id;
+    if (id in saved) d.open = !!saved[id];
+    d.addEventListener('toggle', () => {
+      saved[id] = d.open;
+      try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch { /* 무시 */ }
+    });
+  });
+  $('expandAll').onclick = () => all.forEach((d) => { d.open = true; });
+  $('collapseAll').onclick = () => all.forEach((d) => { d.open = false; });
+  updateSummaries();
 }
 
 function wirePointOptions() {
@@ -408,6 +488,8 @@ async function init() {
   // 영상/이미지 저장 시에는 목표값으로 즉시 맞춘다.
   wireView();
   wirePointOptions();
+  setupPanel();
+  syncViewUi();
   $('optIntro').onchange = () => scene.setOptions({ globeIntro: $('optIntro').checked });
   $('optCard').onchange = () => { scene.setOptions({ cardShown: $('optCard').checked }); refreshMeta(); };
   ['outMin', 'backMin'].forEach((id) => $(id).addEventListener('input', reflow));
