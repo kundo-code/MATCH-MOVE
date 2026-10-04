@@ -117,12 +117,49 @@ function buildCountries() {
   sel.innerHTML = `<option value="" disabled ${state.countryId ? '' : 'selected'}>국가를 선택하세요</option>` +
     countriesInRegion().map((c) => `<option value="${c.code}">${c.ko} (${c.en}) · 공항 ${count(c.code)}곳</option>`).join('');
   sel.value = state.countryId || '';
+  sel._sync?.();
   sel.onchange = () => {
     state.countryId = sel.value || null;
     $('search').value = '';
     buildDestinations();
     updateStepLocks();
   };
+}
+
+/** <select>를 선택 항목 바로 아래로 목록이 펼쳐지는(스크롤 가능) 드롭다운으로 표시 */
+function makeCombo(sel) {
+  const wrap = document.createElement('div'); wrap.className = 'combo';
+  const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'combo-btn';
+  const list = document.createElement('div'); list.className = 'combo-list'; list.hidden = true; list.setAttribute('role', 'listbox');
+  sel.parentNode.insertBefore(wrap, sel); wrap.append(btn, list); wrap.appendChild(sel); sel.classList.add('combo-native');
+  const close = () => { list.hidden = true; wrap.classList.remove('open'); };
+  const sync = () => {
+    const cur = sel.options[sel.selectedIndex];
+    btn.textContent = cur ? cur.textContent : '';
+    btn.classList.toggle('is-placeholder', !sel.value);
+    btn.disabled = sel.disabled;
+    list.innerHTML = '';
+    [...sel.options].forEach((o) => {
+      if (o.disabled) return;
+      const it = document.createElement('div'); it.className = 'combo-item'; it.setAttribute('role', 'option');
+      it.textContent = o.textContent; it.dataset.v = o.value;
+      if (o.value === sel.value) it.classList.add('sel');
+      it.onclick = () => { sel.value = o.value; sync(); close(); sel.dispatchEvent(new Event('change')); };
+      list.appendChild(it);
+    });
+    if (!list.children.length) { const e = document.createElement('div'); e.className = 'combo-empty'; e.textContent = '항목이 없습니다'; list.appendChild(e); }
+  };
+  btn.onclick = () => {
+    if (!list.hidden) return close();
+    document.querySelectorAll('.combo.open').forEach((c) => c._close?.());
+    sync(); list.hidden = false; wrap.classList.add('open');
+    list.querySelector('.sel')?.scrollIntoView({ block: 'nearest' });
+  };
+  wrap._close = close;
+  document.addEventListener('pointerdown', (e) => { if (!wrap.contains(e.target)) close(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+  new MutationObserver(sync).observe(sel, { childList: true, attributes: true, attributeFilter: ['disabled'] });
+  sel._sync = sync; sync();
 }
 
 function buildDestinations() {
@@ -135,6 +172,7 @@ function buildDestinations() {
   sel.innerHTML = `<option value="" disabled ${current ? '' : 'selected'}>${list.length ? '공항을 선택하세요' : '검색 결과가 없습니다'}</option>` +
     list.map((a) => `<option value="${a.id}">${a.ko || a.en} · ${a.iata}</option>`).join('');
   sel.value = current;
+  sel._sync?.();
   sel.onchange = () => { if (sel.value) { state.destId = sel.value; applyFlight(); } };
   $('stpAirportHint').textContent = state.countryId ? `가나다순 · ${list.length}${q ? `/${all.length}` : ''}곳` : '';
 }
@@ -573,7 +611,9 @@ function wirePointOptions() {
   $('startView').onchange = () => scene.setOptions({ startView: $('startView').value });
   // 사운드
   $('optSound').onchange = () => { unlockAudio(); applyVolume(); };
-  $('soundVol').oninput = (e) => { $('soundVolOut').textContent = `${e.target.value}%`; applyVolume(); };
+  const setVol = (v) => { $('soundVol').value = v; $('soundVolQ').value = v; $('soundVolOut').textContent = `${v}%`; $('soundVolQ').title = `음량 ${v}%`; applyVolume(); updateSummaries?.(); };
+  $('soundVol').oninput = (e) => { unlockAudio(); setVol(e.target.value); };
+  $('soundVolQ').oninput = (e) => { unlockAudio(); if (+e.target.value > 0 && !soundOn()) $('optSound').checked = true; setVol(e.target.value); };
   $('soundBtn').onclick = () => { $('optSound').checked = !soundOn(); unlockAudio(); applyVolume(); updateSummaries?.(); };
   document.addEventListener('pointerdown', unlockAudio, { once: true });
   document.addEventListener('keydown', unlockAudio, { once: true });
@@ -632,11 +672,12 @@ async function init() {
   syncViewUi();
   $('optIntro').onchange = () => scene.setOptions({ globeIntro: $('optIntro').checked });
   ['outMin', 'backMin'].forEach((id) => $(id).addEventListener('input', reflow));
+  makeCombo($('country')); makeCombo($('dest'));
   $('search').addEventListener('input', buildDestinations);
   $('search').addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     const first = [...$('dest').options].find((o) => o.value);
-    if (first) { $('dest').value = first.value; state.destId = first.value; applyFlight(); }
+    if (first) { $('dest').value = first.value; $('dest')._sync(); state.destId = first.value; applyFlight(); }
   });
   $('optBorders').onchange = (e) => scene.setOptions({ borders: e.target.checked });
   $('optClouds').onchange = (e) => scene.setOptions({ clouds: e.target.checked });

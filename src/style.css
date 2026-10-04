@@ -165,3 +165,18 @@ kbd { background: #16213a; border: 1px solid var(--line); border-radius: 5px; pa
 .stp.is-locked select, .stp.is-locked input { pointer-events: none; }
 .stp select[size] { margin-top: 0; padding: 2px; }
 .stp select[size] option { padding: 3px 8px; font-size: 13px; }
+
+/* 선택 항목 아래로 펼쳐지는 스크롤 드롭다운 */
+.combo { position: relative; }
+.combo-native { display: none; }
+.combo-btn { width: 100%; text-align: left; padding: 8px 30px 8px 10px; border-radius: 8px; border: 1px solid var(--line, #2a3756); background: #0e1730; color: var(--text); font: inherit; font-size: 13px; cursor: pointer; position: relative; }
+.combo-btn::after { content: '▾'; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: var(--mute); }
+.combo.open .combo-btn::after { content: '▴'; }
+.combo-btn.is-placeholder { color: var(--mute); }
+.combo-btn:disabled { cursor: default; }
+.combo-list { margin-top: 4px; max-height: 240px; overflow-y: auto; border: 1px solid var(--line, #2a3756); border-radius: 8px; background: #0b1226; }
+.combo-item { padding: 7px 10px; font-size: 13px; cursor: pointer; }
+.combo-item:hover { background: rgba(77,163,255,.18); }
+.combo-item.sel { background: rgba(77,163,255,.32); font-weight: 700; }
+.combo-empty { padding: 10px; font-size: 12px; color: var(--mute); }
+.transport input.volq { flex: none; width: 84px; }
