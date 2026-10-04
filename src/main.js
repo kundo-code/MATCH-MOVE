@@ -140,6 +140,10 @@ function flightMeta() {
     showDestTarget: $('optDestTarget').checked,
     showOriginBox: $('optOriginBox').checked,
     showDestBox: $('optDestBox').checked,
+    originBoxScale: +$('originBoxSize').value / 100,
+    destBoxScale: +$('destBoxSize').value / 100,
+    originTargetScale: +$('originTargetSize').value / 100,
+    destTargetScale: +$('destTargetSize').value / 100,
     tilesActive: false,
   };
 }
@@ -463,6 +467,15 @@ function wirePointOptions() {
     scene.setOptions({ depth: +e.target.value / 100 });
   };
   $('optShadow').onchange = () => scene.setOptions({ planeShadow: $('optShadow').checked });
+  // 출발/도착 지점별 타겟·정보박스 크기
+  for (const [id, label, apply] of [
+    ['originTargetSize', 'originTargetSizeOut', (v) => scene.setOptions({ originTargetScale: v })],
+    ['destTargetSize', 'destTargetSizeOut', (v) => scene.setOptions({ destTargetScale: v })],
+    ['originBoxSize', 'originBoxSizeOut', () => {}],
+    ['destBoxSize', 'destBoxSizeOut', () => {}],
+  ]) {
+    $(id).oninput = (e) => { $(label).textContent = `${e.target.value}%`; apply(+e.target.value / 100); refresh(); };
+  }
   $('planeSize').oninput = (e) => {
     $('planeSizeOut').textContent = `${e.target.value}%`;
     scene.setOptions({ planeSize: +e.target.value / 100 });

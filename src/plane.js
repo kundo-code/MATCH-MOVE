@@ -124,12 +124,12 @@ export function buildPlane(airline) {
   const g = new THREE.Group();
   const grey = new THREE.MeshStandardMaterial({ color: L.wing, emissive: L.wing, emissiveIntensity: 0.16, roughness: 0.5, metalness: 0.12, side: THREE.DoubleSide });
   const wingTex = tex(paintWing());
-  const wingMat = new THREE.MeshStandardMaterial({ map: wingTex, color: 0xd2d8df, emissiveMap: wingTex, emissive: 0xffffff, emissiveIntensity: 0.12, roughness: 0.5, metalness: 0.25, side: THREE.DoubleSide });
+  const wingMat = new THREE.MeshStandardMaterial({ map: wingTex, color: 0xeef2f6, emissiveMap: wingTex, emissive: 0xffffff, emissiveIntensity: 0.16, roughness: 0.5, metalness: 0.25, side: THREE.DoubleSide });
   const tipMat = new THREE.MeshStandardMaterial({ color: L.winglet, roughness: 0.4, metalness: 0.15, side: THREE.DoubleSide });
 
   // 동체
   const bodyTex = tex(paintFuselage(L));
-  g.add(new THREE.Mesh(fuselageGeometry(), new THREE.MeshStandardMaterial({ map: bodyTex, emissiveMap: bodyTex, emissive: 0xffffff, emissiveIntensity: 0.28, roughness: 0.36, metalness: 0.05 })));
+  g.add(new THREE.Mesh(fuselageGeometry(), new THREE.MeshStandardMaterial({ map: bodyTex, color: 0xd4d6da, emissiveMap: bodyTex, emissive: 0xffffff, emissiveIntensity: 0.2, roughness: 0.38, metalness: 0.05 })));
 
   // 주날개: 후퇴각 + 상반각 + 윙렛
   const wingPlan = [[0.03, 0.08], [0.47, -0.2], [0.47, -0.255], [0.03, -0.17]];

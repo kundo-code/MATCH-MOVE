@@ -103,11 +103,23 @@
               <summary><i class="dot" style="background:#4ade80"></i>출발 지점<span class="sum" id="sumOriginOpt"></span></summary>
               <label class="check"><input type="checkbox" id="optOriginTarget" checked /> 붉은 타겟 원형</label>
               <label class="check"><input type="checkbox" id="optOriginBox" checked /> 정보박스 (공항명·국가)</label>
+              <label class="zoomrow">타겟 크기 <output id="originTargetSizeOut">100%</output>
+                <input id="originTargetSize" type="range" min="40" max="250" step="1" value="100" />
+              </label>
+              <label class="zoomrow">정보박스 크기 <output id="originBoxSizeOut">100%</output>
+                <input id="originBoxSize" type="range" min="40" max="250" step="1" value="100" />
+              </label>
             </details>
             <details class="grp" open>
               <summary><i class="dot" style="background:#ffb020"></i>도착 지점<span class="sum" id="sumDestOpt"></span></summary>
               <label class="check"><input type="checkbox" id="optDestTarget" checked /> 붉은 타겟 원형</label>
               <label class="check"><input type="checkbox" id="optDestBox" checked /> 정보박스 (공항명·국가)</label>
+              <label class="zoomrow">타겟 크기 <output id="destTargetSizeOut">100%</output>
+                <input id="destTargetSize" type="range" min="40" max="250" step="1" value="100" />
+              </label>
+              <label class="zoomrow">정보박스 크기 <output id="destBoxSizeOut">100%</output>
+                <input id="destBoxSize" type="range" min="40" max="250" step="1" value="100" />
+              </label>
             </details>
             <details class="grp">
               <summary><i class="dot ic">✈</i>비행기<span class="sum" id="sumPlane"></span></summary>

@@ -61,7 +61,7 @@ export class GlobeScene {
     this.maxAniso = this.renderer.capabilities.getMaxAnisotropy();
     this.flight = null;
     this.patches = new Map();
-    this.options = { borders: true, clouds: true, hdTiles: true, countryLabels: true, originTarget: true, destTarget: true, cardShown: true, mapZoom: 1, mapRotate: 0, mapTilt: 38, panX: 0, panY: 0, planeSize: 1, globeIntro: false, endZoom: 1, endRotate: 0, endTilt: 52, endPanX: 0, endPanY: 0, depth: 0.7, planeShadow: true, duration: 8, wideStart: false, startView: 'auto' };
+    this.options = { borders: true, clouds: true, hdTiles: true, countryLabels: true, originTarget: true, destTarget: true, originTargetScale: 1, destTargetScale: 1, cardShown: true, mapZoom: 1, mapRotate: 0, mapTilt: 38, panX: 0, panY: 0, planeSize: 1, globeIntro: false, endZoom: 1, endRotate: 0, endTilt: 52, endPanX: 0, endPanY: 0, depth: 0.7, planeShadow: true, duration: 8, wideStart: false, startView: 'auto' };
     this.size = { w: 1280, h: 720 };
     this.tmpCam = new THREE.PerspectiveCamera(VFOV, 16 / 9, 0.001, 100);
     // 기체에 금속 반사·하이라이트를 주는 환경 맵 (스튜디오 조명)
@@ -624,7 +624,7 @@ export class GlobeScene {
       const ground = g.userData.n.clone().multiplyScalar(GROUND_R + 0.00005);
       const facing = g.userData.n.dot(cam.position) > 1.0005;
       g.visible = this.options[g.userData.opt] && facing;
-      const rPx = (24 + 30 * (i ? st.z : 0)) * uPx;
+      const rPx = (24 + 30 * (i ? st.z : 0)) * uPx * (i ? this.options.destTargetScale : this.options.originTargetScale);
       const d = cam.position.distanceTo(ground);
       g.position.copy(ground);
       g.quaternion.copy(cam.quaternion);

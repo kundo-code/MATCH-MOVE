@@ -257,9 +257,9 @@ export function paintWing() {
   const P = (u, k) => [u * W, (yLE(u) + k * (yTE(u) - yLE(u))) * H]; // k: 0=앞전 … 1=뒷전
 
   const base = ctx.createLinearGradient(0, 0, W, 0);
-  base.addColorStop(0, '#9aa3af');
-  base.addColorStop(0.55, '#8b94a1');
-  base.addColorStop(1, '#76808d');
+  base.addColorStop(0, '#b0b8c3');
+  base.addColorStop(0.55, '#a0a9b5');
+  base.addColorStop(1, '#8a94a1');
   ctx.fillStyle = base;
   ctx.fillRect(0, 0, W, H);
 
@@ -275,17 +275,17 @@ export function paintWing() {
   };
 
   // 앞전 슬랫: 한 단계 어두운 띠 + 구획선
-  strip(0.03, 0.99, 0, 0.09, '#6c7581');
+  strip(0.03, 0.99, 0, 0.09, '#808996');
   for (let u = 0.1; u < 0.99; u += 0.095) line(u, 0, u, 0.09, 0.5);
   line(0.03, 0.09, 0.99, 0.09, 0.55);
   // 내측 플랩(뒷전 38%): 구획선 + 플랩 트랙 페어링
-  strip(0.05, 0.56, 0.62, 1, '#a0a8b4');
+  strip(0.05, 0.56, 0.62, 1, '#b6bdc8');
   for (const u of [0.05, 0.2, 0.34, 0.46, 0.56]) line(u, 0.62, u, 1, 0.65, 2.6);
   line(0.05, 0.62, 0.56, 0.62, 0.55);
   ctx.fillStyle = 'rgba(70,78,90,0.55)';
   for (const u of [0.13, 0.27, 0.4, 0.51]) { const [x, y] = P(u, 0.96); ctx.beginPath(); ctx.ellipse(x, y, 16, 7, 0.1, 0, Math.PI * 2); ctx.fill(); }
   // 에일러론(외측 뒷전)
-  strip(0.62, 0.93, 0.66, 1, '#7d8693');
+  strip(0.62, 0.93, 0.66, 1, '#929ba7');
   line(0.62, 0.66, 0.62, 1, 0.65, 2.6); line(0.93, 0.66, 0.93, 1, 0.65, 2.6); line(0.62, 0.66, 0.93, 0.66, 0.55);
   // 스포일러 패널
   for (let i = 0; i < 6; i++) {

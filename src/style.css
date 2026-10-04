@@ -54,7 +54,7 @@ input[type=search] { margin-top: 10px; }
 #hud { pointer-events: none; }
 .loading { position: absolute; inset: 0; display: grid; place-items: center; background: #02030a; color: var(--mute); font-size: 14px; }
 .loading[hidden] { display: none; }
-.badge { position: absolute; top: 10px; right: 12px; background: rgba(0,0,0,.55); padding: 5px 10px; border-radius: 999px; font-size: 12px; color: var(--mute); }
+.badge { position: absolute; top: 10px; left: 12px; background: rgba(0,0,0,.55); padding: 5px 10px; border-radius: 999px; font-size: 12px; color: var(--mute); }
 .transport { display: flex; align-items: center; gap: 12px; width: min(100%, calc((100vh - 110px) * var(--ar, 1.7778))); }
 .transport input { flex: 1; }
 #clock { font-variant-numeric: tabular-nums; color: var(--mute); font-size: 13px; min-width: 90px; text-align: right; }

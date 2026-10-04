@@ -132,29 +132,30 @@ export function drawHud(ctx, w, h, info, meta) {
   // 공항 콜아웃: 도착지는 줌인할수록 살짝 커진다. 붉은 타겟이 있으면 그 바깥에서 선이 시작한다
   const z = info.zoom;
   // 붉은 타겟(3D 씬)의 바깥에서 선이 시작한다. 타겟 반지름은 줌인할수록 도착 쪽만 커진다
-  const gapOf = (on, zz) => (on ? 24 + 30 * zz + 4 : 8);
+  const gapOf = (on, zz, k = 1) => (on ? (24 + 30 * zz) * k + 4 : 8);
   if (meta.showOriginBox !== false) callout(ctx, info.origin, u, {
-    maxY: cy, scale: sc, gap: gapOf(meta.showOriginTarget, 0), color: '#4ade80', tag: '출발 · DEPARTURE',
+    maxY: cy, scale: sc * (meta.originBoxScale ?? 1), gap: gapOf(meta.showOriginTarget, 0, meta.originTargetScale ?? 1), color: '#4ade80', tag: '출발 · DEPARTURE',
     name: `${meta.origin.ko || meta.origin.en}`, sub: `${meta.originCountry.ko} · ${meta.origin.iata}`,
     alpha: intro * (1 - smooth((z - 0.2) / 0.5) * 0.9),
   });
   if (meta.showDestBox !== false) callout(ctx, info.dest, u, {
-    maxY: cy, scale: Math.min(sc, 0.7), gap: gapOf(meta.showDestTarget, z), color: '#ffb020', tag: '도착 · ARRIVAL', // 도착 정보박스는 항상 70% 크기
+    maxY: cy, scale: Math.min(sc, 0.7) * (meta.destBoxScale ?? 1), gap: gapOf(meta.showDestTarget, z, meta.destTargetScale ?? 1), color: '#ffb020', tag: '도착 · ARRIVAL', // 도착 정보박스는 항상 70% 크기
     name: `${meta.dest.ko || meta.dest.en}`, sub: `${meta.destCountry.ko} · ${meta.dest.iata}`,
     alpha: intro,
   });
 
   // ── 상단: 항공사 + 노선 ──────────────────────────────────────────────
   const topW = portrait ? w - m * 2 : 560 * u, topH = 108 * u;
+  const topX = w - m - topW; // 우측 상단
   ctx.globalAlpha = intro;
   ctx.save();
-  ctx.translate(m, m); ctx.scale(sc, sc); ctx.translate(-m, -m);
-  glass(ctx, m, m, topW, topH, 18 * u, 0.62);
-  roundRect(ctx, m, m, 10 * u, topH, 5 * u);
+  ctx.translate(w - m, m); ctx.scale(sc, sc); ctx.translate(-(w - m), -m);
+  glass(ctx, topX, m, topW, topH, 18 * u, 0.62);
+  roundRect(ctx, topX, m, 10 * u, topH, 5 * u);
   ctx.fillStyle = meta.airline.tail; ctx.fill();
-  text(ctx, meta.airline.ko, m + 34 * u, m + 46 * u, { size: 31 * u, weight: 700 });
-  text(ctx, meta.airline.en.toUpperCase(), m + 34 * u, m + 78 * u, { size: 17 * u, weight: 500, color: 'rgba(255,255,255,0.65)' });
-  text(ctx, `${meta.origin.iata}  →  ${meta.dest.iata}`, m + topW - 28 * u, m + 62 * u, { size: 44 * 0.9 * u, weight: 900, align: 'right', color: '#fff' });
+  text(ctx, meta.airline.ko, topX + 34 * u, m + 46 * u, { size: 31 * u, weight: 700 });
+  text(ctx, meta.airline.en.toUpperCase(), topX + 34 * u, m + 78 * u, { size: 17 * u, weight: 500, color: 'rgba(255,255,255,0.65)' });
+  text(ctx, `${meta.origin.iata}  →  ${meta.dest.iata}`, topX + topW - 28 * u, m + 62 * u, { size: 44 * 0.9 * u, weight: 900, align: 'right', color: '#fff' });
   ctx.restore();
 
   if (showCard) {
