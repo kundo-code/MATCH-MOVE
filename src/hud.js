@@ -50,6 +50,7 @@ function countryLabels(ctx, info, u, route) {
     .sort((a, b) => (route.has(b.code) - route.has(a.code)) || a.rank - b.rank);
   const fade = smooth((info.dist - 0.12) / 0.25) * smooth((3.4 - info.dist) / 1.0);
   for (const c of items) {
+    if (c.code === 'KP') continue; // 조선민주주의인민공화국 라벨은 표시하지 않는다
     const far = smooth((info.dist - 0.35) / 0.8); // 최대 줌아웃에 가까울수록 1
     const size = (route.has(c.code) ? 21 : 17) * 0.85 * (1 - 0.2 * far) * u;
     ctx.font = `700 ${size}px ${FONT}`;

@@ -522,6 +522,8 @@ function wirePointOptions() {
   ]) {
     $(id).oninput = (e) => { $(label).textContent = `${e.target.value}%`; apply(+e.target.value / 100); refresh(); };
   }
+  // 기본 크기값(HTML 슬라이더 값)을 씬에 반영
+  scene.setOptions({ originTargetScale: +$('originTargetSize').value / 100, destTargetScale: +$('destTargetSize').value / 100 });
   $('planeSize').oninput = (e) => {
     $('planeSizeOut').textContent = `${e.target.value}%`;
     scene.setOptions({ planeSize: +e.target.value / 100 });
