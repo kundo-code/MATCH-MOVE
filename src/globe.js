@@ -5,7 +5,7 @@ import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { latLonToVec, buildArc, buildFlightPath, buildGroundTrack, bearingDeg, greatCircleKm, GROUND_R } from './flight.js';
-import { buildPlane, buildShadow } from './plane.js';
+import { buildPlane } from './plane.js';
 import { buildAirportPatches } from './satellite.js';
 
 const D2R = Math.PI / 180;
@@ -59,7 +59,7 @@ export class GlobeScene {
     this.maxAniso = this.renderer.capabilities.getMaxAnisotropy();
     this.flight = null;
     this.patches = new Map();
-    this.options = { borders: true, clouds: true, hdTiles: true, countryLabels: true, markers3d: false, cardShown: true, mapZoom: 1, globeIntro: false };
+    this.options = { borders: true, clouds: true, hdTiles: true, countryLabels: true, markers3d: false, cardShown: true, mapZoom: 1, mapRotate: 0, mapTilt: 38, globeIntro: false };
     this.size = { w: 1280, h: 720 };
     this.#buildStatic();
   }
@@ -197,14 +197,11 @@ export class GlobeScene {
     const ground = new LineGeometry();
     ground.setPositions(buildGroundTrack(origin, dest).flat());
     const groundMat = this.#lineMat({ color: 0xff3b30, linewidth: 3.2, opacity: 0.7, dashed: true, dashSize: 0.01, gapSize: 0.01 });
-    groundMat.userData.dash = [0.045, 0.03];
+    groundMat.userData.dash = [0.045 / 4, 0.03 / 4]; // 점선 간격 1/4
     addLine(ground, groundMat, 12, true);
 
     this.plane = buildPlane(livery);
     this.dynamic.add(this.plane);
-    this.shadow = buildShadow();
-    this.shadow.renderOrder = 6;
-    this.dynamic.add(this.shadow);
 
     this.markers = [[origin, 0x4ade80], [dest, 0xffb020]].map(([ap, color]) => {
       const n = v3(latLonToVec(ap.lat, ap.lon));
@@ -313,16 +310,18 @@ export class GlobeScene {
     const { intro, zoomFrom } = TIMELINE;
     const s = this.flightProgress(t);
     const p = clamp((t - this.#flyStart()) / (TIMELINE.flyEnd - this.#flyStart()), 0, 1);
-    const tiltFit = 38;
-    const psiFit = this.#fitHeading(aspect);
+    const tiltFit = this.options.mapTilt;
+    // 화면 회전: 기본 배치(경로가 가로로 지나감)에 사용자가 지정한 회전각을 더한다
+    const psiFit = (this.#fitHeading(aspect) + this.options.mapRotate + 360) % 360;
 
     // 경로 전체가 한 화면에 들어오는 거리
-    const need = (this.chord * (aspect < 1 ? 2.0 : 1.7)) / 2;
+    // 경로가 화면에서 놓이는 각도에 따라 가로·세로로 필요한 폭이 달라진다 (회전해도 두 공항이 화면 안에 들어오도록)
+    const rel = (this.routeBearing - psiFit) * D2R;
+    const ex = this.chord * Math.abs(Math.sin(rel));
+    const ey = this.chord * Math.abs(Math.cos(rel)) * Math.cos(tiltFit * D2R);
+    const margin = (aspect < 1 ? 2.0 : 1.7) / 2;
     // 사용자가 지정한 지도 확대/축소 배율(mapZoom, 1 = 두 공항이 딱 들어오는 크기)
-    const dFit = clamp(
-      (aspect >= 1 ? need / (TAN_HALF * aspect) : (need * Math.cos(tiltFit * D2R)) / TAN_HALF) / this.options.mapZoom,
-      0.03, 3.2,
-    );
+    const dFit = clamp(Math.max((ex * margin) / (TAN_HALF * aspect), (ey * margin) / TAN_HALF, 0.02) / this.options.mapZoom, 0.03, 3.2);
     // 기본: 사용자가 설정한 지도 범위(dFit)에서 바로 시작. 인트로 옵션을 켜면 지구 전체에서 내려온다
     const dOver = this.options.globeIntro ? Math.max(2.5, dFit * 1.5) : dFit;
     const dEnd = 0.03;
@@ -409,15 +408,6 @@ export class GlobeScene {
     this.plane.matrixAutoUpdate = false;
     this.plane.matrix.scale(new THREE.Vector3(pScale, pScale, pScale));
     this.plane.matrixWorldNeedsUpdate = true;
-
-    // 그림자: 기체 바로 아래 지면. 고도가 높을수록 옅어진다
-    const groundPos = up.clone().multiplyScalar(GROUND_R + 0.00005);
-    const fwd = tan.clone().addScaledVector(up, -tan.dot(up)).normalize();
-    const gx = new THREE.Vector3().crossVectors(up, fwd).normalize();
-    this.shadow.matrixAutoUpdate = false;
-    this.shadow.matrix.makeBasis(gx, up, fwd).setPosition(groundPos).scale(new THREE.Vector3(pScale, pScale, pScale));
-    this.shadow.matrixWorldNeedsUpdate = true;
-    this.shadow.material.opacity = 0.42 * (1 - smooth(altitude / (25 * pScale + 1e-6)));
 
     // 지나온 궤적
     const count = Math.floor(st.s * this.segments);

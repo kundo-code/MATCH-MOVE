@@ -303,16 +303,48 @@ async function init() {
   $('loading').hidden = true;
 
   const reflow = () => { refreshMeta(); };
+  // ── 시점 조절: 확대/축소 · 회전 · 기울기 (슬라이더, 휠, 드래그 모두 같은 값을 갱신) ──
+  const clampN = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
   const setMapZoom = (pct) => {
-    pct = Math.min(300, Math.max(40, Math.round(pct / 5) * 5));
+    pct = clampN(Math.round(pct / 5) * 5, 40, 300);
     $('mapZoom').value = pct;
     $('mapZoomOut').textContent = `${pct}%`;
     scene.setOptions({ mapZoom: pct / 100 });
   };
+  const setMapRotate = (deg) => {
+    deg = ((Math.round(deg) + 540) % 360) - 180; // -180 ~ 180
+    $('mapRotate').value = deg;
+    $('mapRotateOut').textContent = `${deg}°`;
+    scene.setOptions({ mapRotate: deg });
+  };
+  const setMapTilt = (deg) => {
+    deg = clampN(Math.round(deg), 0, 70);
+    $('mapTilt').value = deg;
+    $('mapTiltOut').textContent = `${deg}°`;
+    scene.setOptions({ mapTilt: deg });
+  };
+  const resetView = () => { setMapZoom(100); setMapRotate(0); setMapTilt(38); };
   $('mapZoom').oninput = (e) => setMapZoom(+e.target.value);
-  // 미리보기 위에서 휠로 확대/축소, 더블클릭으로 초기화
+  $('mapRotate').oninput = (e) => setMapRotate(+e.target.value);
+  $('mapTilt').oninput = (e) => setMapTilt(+e.target.value);
+  $('viewReset').onclick = resetView;
   stage.addEventListener('wheel', (e) => { e.preventDefault(); setMapZoom(+$('mapZoom').value * (e.deltaY < 0 ? 1.08 : 1 / 1.08)); }, { passive: false });
-  stage.addEventListener('dblclick', () => setMapZoom(100));
+  stage.addEventListener('dblclick', resetView);
+  // 드래그: 좌우 = 회전, 상하 = 기울기
+  let drag = null;
+  stage.addEventListener('pointerdown', (e) => {
+    drag = { x: e.clientX, y: e.clientY, rot: +$('mapRotate').value, tilt: +$('mapTilt').value };
+    stage.setPointerCapture(e.pointerId);
+    stage.classList.add('dragging');
+  });
+  stage.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    setMapRotate(drag.rot + (e.clientX - drag.x) * 0.35);
+    setMapTilt(drag.tilt - (e.clientY - drag.y) * 0.2);
+  });
+  const endDrag = () => { drag = null; stage.classList.remove('dragging'); };
+  stage.addEventListener('pointerup', endDrag);
+  stage.addEventListener('pointercancel', endDrag);
   $('optIntro').onchange = () => scene.setOptions({ globeIntro: $('optIntro').checked });
   $('optCard').onchange = () => { scene.setOptions({ cardShown: $('optCard').checked }); refreshMeta(); };
   $('optTargets').onchange = () => { scene.setOptions({ markers3d: !$('optTargets').checked }); refreshMeta(); };

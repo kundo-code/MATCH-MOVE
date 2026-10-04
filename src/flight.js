@@ -106,7 +106,7 @@ export function buildFlightPath(from, to, { segments = 480, lift = 0.1 } = {}) {
   const hc = chord * lift;                 // 정점 고도
   const xa = Math.min(0.02, 0.1 * air);    // 활주로 직전·직후의 완만한 구간
   const ha = xa * 0.055;                   // 경사 약 3°
-  const xd = air / 2;                      // 정점은 경로 중간 → 좌우 대칭 포물선 형태
+  const xd = air / 2;                      // 정점은 경로 중간
   // 지면에서 x만큼 떨어진 지점의 고도: 지면 부근은 완만하게, 이후 부드러운 S곡선으로 정점까지
   const alt = (x) => {
     if (x <= 0) return 0;
@@ -117,7 +117,16 @@ export function buildFlightPath(from, to, { segments = 480, lift = 0.1 } = {}) {
   const pts = [];
   for (let i = 0; i <= segments; i++) {
     const phi = (i / segments) * theta;
-    const h = phi <= liftoff || phi >= touchdown ? 0 : Math.min(alt(phi - liftoff), alt(touchdown - phi));
+    let h = 0;
+    if (phi > liftoff && phi < touchdown) {
+      if (phi - liftoff <= xd) {
+        // 상승: 이륙 직후 살짝 들어올린 뒤 거의 직선으로 정점까지 올라간다 (정점에서는 수평)
+        const u = (phi - liftoff) / xd;
+        h = hc * (1 - Math.pow(1 - u, 1.35)) * smoothstep(u / 0.1);
+      } else {
+        h = alt(touchdown - phi); // 하강: 완만한 글라이드 후 접지
+      }
+    }
     const c = Math.cos(phi), s = Math.sin(phi), r = GROUND_R + h;
     pts.push([(a[0] * c + t0[0] * s) * r, (a[1] * c + t0[1] * s) * r, (a[2] * c + t0[2] * s) * r]);
   }

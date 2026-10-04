@@ -184,7 +184,7 @@ export function drawHud(ctx, w, h, info, meta) {
   ctx.fillStyle = meta.airline.tail; ctx.fill();
   text(ctx, meta.airline.ko, m + 34 * u, m + 46 * u, { size: 31 * u, weight: 700 });
   text(ctx, meta.airline.en.toUpperCase(), m + 34 * u, m + 78 * u, { size: 17 * u, weight: 500, color: 'rgba(255,255,255,0.65)' });
-  text(ctx, `${meta.origin.iata}  →  ${meta.dest.iata}`, m + topW - 28 * u, m + 62 * u, { size: 44 * u, weight: 900, align: 'right', color: '#fff' });
+  text(ctx, `${meta.origin.iata}  →  ${meta.dest.iata}`, m + topW - 28 * u, m + 62 * u, { size: 44 * 0.9 * u, weight: 900, align: 'right', color: '#fff' });
 
   if (showCard) {
     const cardW = Math.min(w - m * 2, 660 * u);
