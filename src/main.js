@@ -136,7 +136,10 @@ function flightMeta() {
     routeCountries: new Set([o.country, d.country]),
     showCountryLabels: $('optCountries').checked,
     showCard: $('optCard').checked,
-    showTargets: $('optTargets').checked,
+    showOriginTarget: $('optOriginTarget').checked,
+    showDestTarget: $('optDestTarget').checked,
+    showOriginBox: $('optOriginBox').checked,
+    showDestBox: $('optDestBox').checked,
     tilesActive: false,
   };
 }
@@ -190,6 +193,7 @@ function loop(now) {
   const dt = (now - last) / 1000;
   last = now;
   if (!state.exporting) {
+    stepView(dt);
     if (state.playing) {
       state.t += dt / state.duration;
       if (state.t >= 1.12) state.t = 0; // 마지막 장면을 잠시 보여준 뒤 반복
@@ -232,6 +236,7 @@ const stamp = () => new Date().toISOString().replace(/[-:T]/g, '').slice(0, 12);
 const baseName = () => `${meta.airline.id}_${meta.origin.iata}-${meta.dest.iata}_${stamp()}`;
 
 async function savePng() {
+  snapView();
   const [W, H] = outputSize();
   setBusy(true, '이미지 생성 중…');
   try {
@@ -244,6 +249,7 @@ async function savePng() {
 
 let abort = null;
 async function saveMp4() {
+  snapView();
   const [W, H] = outputSize();
   const fps = +$('fps').value, targetMB = +$('targetMB').value || 50;
   abort = new AbortController();
@@ -289,6 +295,92 @@ function setBusy(busy, msg) {
   if (msg) $('exportNote').textContent = msg;
 }
 
+// ── 시점 컨트롤러 ─────────────────────────────────────────────────────
+const VIEW_DEFAULT = { zoom: 1, rot: 0, tilt: 38, panX: 0, panY: 0 };
+const view = { cur: { ...VIEW_DEFAULT }, tgt: { ...VIEW_DEFAULT } };
+const clampN = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const wrap180 = (d) => ((((d + 180) % 360) + 360) % 360) - 180;
+
+function pushView() {
+  const c = view.cur;
+  scene.setOptions({ mapZoom: c.zoom, mapRotate: wrap180(c.rot), mapTilt: c.tilt, panX: c.panX, panY: c.panY });
+}
+/** 현재값이 목표값을 지수 감쇠로 따라간다 (프레임 속도와 무관) */
+function stepView(dt) {
+  const k = 1 - Math.exp(-Math.min(dt, 0.1) * 12);
+  const c = view.cur, t = view.tgt;
+  c.zoom = Math.exp(Math.log(c.zoom) + (Math.log(t.zoom) - Math.log(c.zoom)) * k);
+  for (const key of ['rot', 'tilt', 'panX', 'panY']) c[key] += (t[key] - c[key]) * k;
+  pushView();
+}
+function snapView() { Object.assign(view.cur, view.tgt); pushView(); }
+
+function syncViewUi() {
+  const t = view.tgt;
+  $('mapZoom').value = Math.round(t.zoom * 100);
+  $('mapZoomOut').textContent = `${Math.round(t.zoom * 100)}%`;
+  const r = Math.round(wrap180(t.rot));
+  $('mapRotate').value = r;
+  $('mapRotateOut').textContent = `${r}°`;
+  $('mapTilt').value = Math.round(t.tilt);
+  $('mapTiltOut').textContent = `${Math.round(t.tilt)}°`;
+}
+
+function wireView() {
+  const t = view.tgt;
+  $('mapZoom').oninput = (e) => { t.zoom = clampN(+e.target.value / 100, 0.4, 3); syncViewUi(); };
+  // 슬라이더 값(-180~180)에 가장 가까운 각도로 이동 → 경계를 넘을 때 반대로 한 바퀴 돌지 않는다
+  $('mapRotate').oninput = (e) => { t.rot += wrap180(+e.target.value - wrap180(t.rot)); syncViewUi(); };
+  $('mapTilt').oninput = (e) => { t.tilt = clampN(+e.target.value, 0, 70); syncViewUi(); };
+  const reset = () => { Object.assign(t, VIEW_DEFAULT); t.rot = view.cur.rot + wrap180(0 - wrap180(view.cur.rot)); syncViewUi(); };
+  $('viewReset').onclick = reset;
+  stage.addEventListener('dblclick', reset);
+  stage.addEventListener('contextmenu', (e) => e.preventDefault());
+  // 휠: 변화량에 비례해 연속적으로 (트랙패드의 작은 값도 부드럽게)
+  stage.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+    t.zoom = clampN(t.zoom * Math.exp(-dy * 0.0015), 0.4, 3);
+    syncViewUi();
+  }, { passive: false });
+  // 드래그: 기본 = 지도 이동, Shift 또는 우클릭 = 회전(좌우)·기울기(상하)
+  let drag = null;
+  stage.addEventListener('pointerdown', (e) => {
+    const rect = stage.getBoundingClientRect();
+    drag = { x: e.clientX, y: e.clientY, h: rect.height, mode: e.shiftKey || e.button === 2 ? 'rotate' : 'pan', start: { ...t } };
+    stage.setPointerCapture(e.pointerId);
+    stage.classList.add('dragging');
+  });
+  stage.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (drag.mode === 'pan') {
+      t.panX = drag.start.panX - dx / drag.h;
+      t.panY = drag.start.panY + dy / drag.h;
+    } else {
+      t.rot = drag.start.rot + dx * 0.3;
+      t.tilt = clampN(drag.start.tilt - dy * 0.2, 0, 70);
+    }
+    syncViewUi();
+  });
+  const end = () => { drag = null; stage.classList.remove('dragging'); };
+  stage.addEventListener('pointerup', end);
+  stage.addEventListener('pointercancel', end);
+}
+
+function wirePointOptions() {
+  const refresh = () => refreshMeta();
+  const bind = (id, opt) => { $(id).onchange = () => { if (opt) scene.setOptions({ [opt]: $(id).checked }); refresh(); }; };
+  bind('optOriginTarget', 'originTarget');
+  bind('optDestTarget', 'destTarget');
+  bind('optOriginBox');
+  bind('optDestBox');
+  $('planeSize').oninput = (e) => {
+    $('planeSizeOut').textContent = `${e.target.value}%`;
+    scene.setOptions({ planeSize: +e.target.value / 100 });
+  };
+}
+
 // ── 시작 ──────────────────────────────────────────────────────────────
 async function init() {
   data = await (await fetch('data/airports.json')).json();
@@ -303,52 +395,13 @@ async function init() {
   $('loading').hidden = true;
 
   const reflow = () => { refreshMeta(); };
-  // ── 시점 조절: 확대/축소 · 회전 · 기울기 (슬라이더, 휠, 드래그 모두 같은 값을 갱신) ──
-  const clampN = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-  const setMapZoom = (pct) => {
-    pct = clampN(Math.round(pct / 5) * 5, 40, 300);
-    $('mapZoom').value = pct;
-    $('mapZoomOut').textContent = `${pct}%`;
-    scene.setOptions({ mapZoom: pct / 100 });
-  };
-  const setMapRotate = (deg) => {
-    deg = ((Math.round(deg) + 540) % 360) - 180; // -180 ~ 180
-    $('mapRotate').value = deg;
-    $('mapRotateOut').textContent = `${deg}°`;
-    scene.setOptions({ mapRotate: deg });
-  };
-  const setMapTilt = (deg) => {
-    deg = clampN(Math.round(deg), 0, 70);
-    $('mapTilt').value = deg;
-    $('mapTiltOut').textContent = `${deg}°`;
-    scene.setOptions({ mapTilt: deg });
-  };
-  const resetView = () => { setMapZoom(100); setMapRotate(0); setMapTilt(38); };
-  $('mapZoom').oninput = (e) => setMapZoom(+e.target.value);
-  $('mapRotate').oninput = (e) => setMapRotate(+e.target.value);
-  $('mapTilt').oninput = (e) => setMapTilt(+e.target.value);
-  $('viewReset').onclick = resetView;
-  stage.addEventListener('wheel', (e) => { e.preventDefault(); setMapZoom(+$('mapZoom').value * (e.deltaY < 0 ? 1.08 : 1 / 1.08)); }, { passive: false });
-  stage.addEventListener('dblclick', resetView);
-  // 드래그: 좌우 = 회전, 상하 = 기울기
-  let drag = null;
-  stage.addEventListener('pointerdown', (e) => {
-    drag = { x: e.clientX, y: e.clientY, rot: +$('mapRotate').value, tilt: +$('mapTilt').value };
-    stage.setPointerCapture(e.pointerId);
-    stage.classList.add('dragging');
-  });
-  stage.addEventListener('pointermove', (e) => {
-    if (!drag) return;
-    setMapRotate(drag.rot + (e.clientX - drag.x) * 0.35);
-    setMapTilt(drag.tilt - (e.clientY - drag.y) * 0.2);
-  });
-  const endDrag = () => { drag = null; stage.classList.remove('dragging'); };
-  stage.addEventListener('pointerup', endDrag);
-  stage.addEventListener('pointercancel', endDrag);
+  // ── 시점 조절: 확대/축소 · 회전 · 기울기 · 이동 ────────────────────────────
+  // 슬라이더·휠·드래그는 목표값(tgt)만 바꾸고, 매 프레임 현재값(cur)이 목표값을 부드럽게 따라간다.
+  // 영상/이미지 저장 시에는 목표값으로 즉시 맞춘다.
+  wireView();
+  wirePointOptions();
   $('optIntro').onchange = () => scene.setOptions({ globeIntro: $('optIntro').checked });
   $('optCard').onchange = () => { scene.setOptions({ cardShown: $('optCard').checked }); refreshMeta(); };
-  $('optTargets').onchange = () => { scene.setOptions({ markers3d: !$('optTargets').checked }); refreshMeta(); };
-  scene.setOptions({ markers3d: !$('optTargets').checked, cardShown: $('optCard').checked });
   ['outMin', 'backMin'].forEach((id) => $(id).addEventListener('input', reflow));
   $('search').addEventListener('input', buildDestinations);
   $('optBorders').onchange = (e) => scene.setOptions({ borders: e.target.checked });

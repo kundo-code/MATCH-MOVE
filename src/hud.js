@@ -56,39 +56,6 @@ function countryLabels(ctx, info, u, route) {
   ctx.globalAlpha = 1;
 }
 
-/** 지도 위에 얹는 붉은 타겟(조준) 마커 */
-function target(ctx, pt, u, seconds = 0, phase = 0, alpha = 1, zoom = 0) {
-  if (!pt.visible) return;
-  const r = (24 + 30 * zoom) * u;
-  const ph = (seconds * 0.9 + phase) % 1;
-  ctx.save();
-  ctx.globalAlpha = alpha;
-  ctx.translate(pt.x, pt.y);
-  ctx.shadowColor = 'rgba(0,0,0,0.7)';
-  ctx.shadowBlur = 6 * u;
-  // 퍼지는 펄스 링
-  ctx.strokeStyle = `rgba(255,59,48,${0.55 * (1 - ph)})`;
-  ctx.lineWidth = 2.5 * u;
-  ctx.beginPath(); ctx.arc(0, 0, r * (1 + ph * 0.9), 0, Math.PI * 2); ctx.stroke();
-  ctx.strokeStyle = '#ff3b30';
-  ctx.fillStyle = '#ff3b30';
-  ctx.lineWidth = 3.2 * u;
-  ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
-  ctx.globalAlpha = alpha * (1 - 0.8 * zoom);
-  ctx.lineWidth = 2 * u;
-  ctx.beginPath(); ctx.arc(0, 0, r * 0.5, 0, Math.PI * 2); ctx.stroke();
-  // 십자 눈금
-  ctx.lineWidth = 3 * u;
-  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-    ctx.beginPath();
-    ctx.moveTo(dx * r * 0.72, dy * r * 0.72);
-    ctx.lineTo(dx * r * 1.38, dy * r * 1.38);
-    ctx.stroke();
-  }
-  ctx.beginPath(); ctx.arc(0, 0, 3.6 * u, 0, Math.PI * 2); ctx.fill();
-  ctx.restore();
-}
-
 /** 지점 위로 수직선을 올리고 그 끝에 정보박스를 중앙정렬로 배치. 박스·글자 모두 0.8배 */
 function callout(ctx, pt, u, { maxY, gap = 8, color, tag, name, sub, big = 1, alpha = 1 }) {
   if (!pt.visible || alpha <= 0.01) return;
@@ -157,21 +124,17 @@ export function drawHud(ctx, w, h, info, meta) {
   const showCard = meta.showCard !== false;
   const cy = showCard ? h - m - cardH : h;
 
-  if (meta.showTargets) {
-    target(ctx, info.origin, u, info.seconds, 0, intro);
-    target(ctx, info.dest, u, info.seconds, 0.5, intro, info.zoom);
-  }
-
   // 공항 콜아웃: 도착지는 줌인할수록 살짝 커진다. 붉은 타겟이 있으면 그 바깥에서 선이 시작한다
   const z = info.zoom;
-  const gap = meta.showTargets ? 24 + 30 * z + 4 : 8;
-  callout(ctx, info.origin, u, {
-    maxY: cy, gap, color: '#4ade80', tag: '출발 · DEPARTURE',
+  // 붉은 타겟(3D 씬)의 바깥에서 선이 시작한다. 타겟 반지름은 줌인할수록 도착 쪽만 커진다
+  const gapOf = (on, zz) => (on ? 24 + 30 * zz + 4 : 8);
+  if (meta.showOriginBox !== false) callout(ctx, info.origin, u, {
+    maxY: cy, gap: gapOf(meta.showOriginTarget, 0), color: '#4ade80', tag: '출발 · DEPARTURE',
     name: `${meta.origin.ko || meta.origin.en}`, sub: `${meta.originCountry.ko} · ${meta.origin.iata}`,
     alpha: intro * (1 - smooth((z - 0.2) / 0.5) * 0.9),
   });
-  callout(ctx, info.dest, u, {
-    maxY: cy, gap, color: '#ffb020', tag: '도착 · ARRIVAL', big: 1 + 0.15 * z,
+  if (meta.showDestBox !== false) callout(ctx, info.dest, u, {
+    maxY: cy, gap: gapOf(meta.showDestTarget, z), color: '#ffb020', tag: '도착 · ARRIVAL', big: 1 + 0.15 * z,
     name: `${meta.dest.ko || meta.dest.en}`, sub: `${meta.destCountry.ko} · ${meta.dest.iata}`,
     alpha: intro,
   });

@@ -99,16 +99,21 @@ export function buildFlightPath(from, to, { segments = 480, lift = 0.1 } = {}) {
   const nl = Math.hypot(...n) || 1;
   const t0 = [(n[1] * a[2] - n[2] * a[1]) / nl, (n[2] * a[0] - n[0] * a[2]) / nl, (n[0] * a[1] - n[1] * a[0]) / nl];
   const chord = 2 * Math.sin(theta / 2);
-  const rollout = Math.min(0.004, 0.03 * theta); // 이륙 활주 / 접지 후 활주 거리
-  const liftoff = rollout, touchdown = theta - rollout;
-  const air = touchdown - liftoff;
+  const rollout = Math.min(0.004, 0.03 * theta); // 접지 후 도착 지점까지 활주하는 거리
+  const touchdown = theta - rollout;
 
-  const hc = chord * lift;                 // 정점 고도
-  const xa = Math.min(0.02, 0.1 * air);    // 활주로 직전·직후의 완만한 구간
-  const ha = xa * 0.055;                   // 경사 약 3°
-  const xd = air / 2;                      // 정점은 경로 중간
-  // 지면에서 x만큼 떨어진 지점의 고도: 지면 부근은 완만하게, 이후 부드러운 S곡선으로 정점까지
-  const alt = (x) => {
+  const hc = chord * lift;       // 정점 고도
+  const xd = touchdown / 2;      // 정점은 출발~접지 구간의 중간
+  const xa = Math.min(0.02, 0.1 * touchdown);
+  const ha = xa * 0.055;         // 접근 경사 약 3°
+
+  // 상승: 출발 지점에서 곧바로 정점을 향해 일정한 각도(= atan(기울기))의 직선으로 오르다가,
+  // 정점 직전 구간(u1 이후)에서만 둥글게 휘어 정점에서 수평이 된다.
+  const u1 = 0.8;
+  const m = (2 * hc) / (1 + u1);                       // 직선 구간의 고도 상승 기울기(고도/u)
+  const climb = (u) => (u < u1 ? m * u : hc - (m * (1 - u) * (1 - u)) / (2 * (1 - u1)));
+  // 하강: 정점에서 수평으로 시작해 완만한 S곡선 → 약 3° 글라이드 → 접지
+  const descent = (x) => {
     if (x <= 0) return 0;
     if (x < xa) return ha * Math.pow(x / xa, 1.15);
     return ha + (hc - ha) * smoothstep((x - xa) / (xd - xa));
@@ -118,19 +123,11 @@ export function buildFlightPath(from, to, { segments = 480, lift = 0.1 } = {}) {
   for (let i = 0; i <= segments; i++) {
     const phi = (i / segments) * theta;
     let h = 0;
-    if (phi > liftoff && phi < touchdown) {
-      if (phi - liftoff <= xd) {
-        // 상승: 이륙 직후 살짝 들어올린 뒤 거의 직선으로 정점까지 올라간다 (정점에서는 수평)
-        const u = (phi - liftoff) / xd;
-        h = hc * (1 - Math.pow(1 - u, 1.35)) * smoothstep(u / 0.1);
-      } else {
-        h = alt(touchdown - phi); // 하강: 완만한 글라이드 후 접지
-      }
-    }
+    if (phi < touchdown) h = phi <= xd ? climb(phi / xd) : descent(touchdown - phi);
     const c = Math.cos(phi), s = Math.sin(phi), r = GROUND_R + h;
     pts.push([(a[0] * c + t0[0] * s) * r, (a[1] * c + t0[1] * s) * r, (a[2] * c + t0[2] * s) * r]);
   }
-  return { pts, theta, phi: theta, rollout, touchdown };
+  return { pts, theta, phi: theta, rollout, touchdown, climbAngle: Math.atan(m / xd) };
 }
 
 /** 지표면(고도 0)을 따라가는 대권 점들 — 지도 위 경로선용 */

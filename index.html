@@ -48,23 +48,49 @@
 
       <section>
         <h2>5. 표시 옵션</h2>
-        <label class="zoomrow">지도 확대/축소 <output id="mapZoomOut">100%</output>
-          <input id="mapZoom" type="range" min="40" max="300" step="5" value="100" />
-        </label>
-        <label class="zoomrow">지도 회전 <output id="mapRotateOut">0°</output>
-          <input id="mapRotate" type="range" min="-180" max="180" step="5" value="0" />
-        </label>
-        <label class="zoomrow">시점 기울기 <output id="mapTiltOut">38°</output>
-          <input id="mapTilt" type="range" min="0" max="70" step="1" value="38" />
-          <small>출발·도착 공항이 함께 잘 보이도록 범위·방향·각도를 조절합니다. 미리보기에서 <b>마우스 휠</b>=확대/축소, <b>드래그</b>=회전(좌우)·기울기(상하), <b>더블클릭</b>=초기화. 영상은 이 시점에서 시작합니다.</small>
-        </label>
-        <button id="viewReset" class="btn small" type="button">시점 초기화</button>
-        <label class="check"><input type="checkbox" id="optIntro" /> 지구 전체 화면에서 시작 <small>(끄면 설정한 지도 범위에서 바로 시작)</small></label>
-        <label class="check"><input type="checkbox" id="optTargets" checked /> 출발·도착 지점 붉은 타겟 원형 <small>(지도 위 오버레이)</small></label>
-        <label class="check"><input type="checkbox" id="optBorders" checked /> 국경선 (GeoJSON)</label>
-        <label class="check"><input type="checkbox" id="optCountries" checked /> 국가명 라벨</label>
-        <label class="check"><input type="checkbox" id="optClouds" checked /> 구름</label>
-        <label class="check"><input type="checkbox" id="optHd" checked /> 공항 주변 고해상도 위성 타일 <small>(Esri, 온라인)</small></label>
+
+        <div class="optgroup">
+          <h3><i style="background:#4ade80"></i>출발 지점</h3>
+          <label class="check"><input type="checkbox" id="optOriginTarget" checked /> 붉은 타겟 원형</label>
+          <label class="check"><input type="checkbox" id="optOriginBox" checked /> 정보박스 (공항명·국가)</label>
+        </div>
+        <div class="optgroup">
+          <h3><i style="background:#ffb020"></i>도착 지점</h3>
+          <label class="check"><input type="checkbox" id="optDestTarget" checked /> 붉은 타겟 원형</label>
+          <label class="check"><input type="checkbox" id="optDestBox" checked /> 정보박스 (공항명·국가)</label>
+        </div>
+
+        <div class="optgroup">
+          <h3>비행기</h3>
+          <label class="zoomrow">기체 크기 <output id="planeSizeOut">100%</output>
+            <input id="planeSize" type="range" min="50" max="300" step="1" value="100" />
+            <small>멀리 축소된 장면에서도 일정한 비율로 보입니다. 더 크게/작게 조절할 수 있어요.</small>
+          </label>
+        </div>
+
+        <div class="optgroup">
+          <h3>지도 시점</h3>
+          <label class="zoomrow">확대/축소 <output id="mapZoomOut">100%</output>
+            <input id="mapZoom" type="range" min="40" max="300" step="1" value="100" />
+          </label>
+          <label class="zoomrow">회전 <output id="mapRotateOut">0°</output>
+            <input id="mapRotate" type="range" min="-180" max="180" step="1" value="0" />
+          </label>
+          <label class="zoomrow">기울기 <output id="mapTiltOut">38°</output>
+            <input id="mapTilt" type="range" min="0" max="70" step="1" value="38" />
+          </label>
+          <small class="hint2">미리보기에서 <b>드래그</b>=지도 이동(상하좌우), <b>Shift+드래그</b> 또는 <b>우클릭 드래그</b>=회전·기울기, <b>마우스 휠</b>=확대/축소, <b>더블클릭</b>=초기화. 영상은 설정한 시점에서 시작합니다.</small>
+          <button id="viewReset" class="btn small" type="button">시점 초기화</button>
+        </div>
+
+        <div class="optgroup">
+          <h3>지도 표시</h3>
+          <label class="check"><input type="checkbox" id="optIntro" /> 지구 전체 화면에서 시작 <small>(끄면 설정한 지도 범위에서 바로 시작)</small></label>
+          <label class="check"><input type="checkbox" id="optBorders" checked /> 국경선 (GeoJSON)</label>
+          <label class="check"><input type="checkbox" id="optCountries" checked /> 국가명 라벨</label>
+          <label class="check"><input type="checkbox" id="optClouds" checked /> 구름</label>
+          <label class="check"><input type="checkbox" id="optHd" checked /> 공항 주변 고해상도 위성 타일 <small>(Esri, 온라인)</small></label>
+        </div>
       </section>
 
       <section>

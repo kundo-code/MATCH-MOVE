@@ -59,7 +59,7 @@ export class GlobeScene {
     this.maxAniso = this.renderer.capabilities.getMaxAnisotropy();
     this.flight = null;
     this.patches = new Map();
-    this.options = { borders: true, clouds: true, hdTiles: true, countryLabels: true, markers3d: false, cardShown: true, mapZoom: 1, mapRotate: 0, mapTilt: 38, globeIntro: false };
+    this.options = { borders: true, clouds: true, hdTiles: true, countryLabels: true, originTarget: true, destTarget: true, cardShown: true, mapZoom: 1, mapRotate: 0, mapTilt: 38, panX: 0, panY: 0, planeSize: 1, globeIntro: false };
     this.size = { w: 1280, h: 720 };
     this.#buildStatic();
   }
@@ -200,26 +200,41 @@ export class GlobeScene {
     groundMat.userData.dash = [0.045 / 4, 0.03 / 4]; // 점선 간격 1/4
     addLine(ground, groundMat, 12, true);
 
+    // 기체는 붉은 타겟(renderOrder 9)보다 나중에 그려 항상 타겟 위에 보이게 한다 (재질을 반투명 패스로)
     this.plane = buildPlane(livery);
+    this.plane.traverse((o) => { if (o.material) { for (const m of [].concat(o.material)) m.transparent = true; } });
+    this.plane.renderOrder = 20;
     this.dynamic.add(this.plane);
 
-    this.markers = [[origin, 0x4ade80], [dest, 0xffb020]].map(([ap, color]) => {
-      const n = v3(latLonToVec(ap.lat, ap.lon));
-      const grp = new THREE.Group();
-      const mk = (geo, opacity) => new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
-      const dot = mk(new THREE.CircleGeometry(0.22, 32), 0.95);
-      const ring = mk(new THREE.RingGeometry(0.62, 0.72, 48), 0.9);
-      const pulse = mk(new THREE.RingGeometry(0.9, 1.0, 48), 0.6);
-      grp.add(dot, ring, pulse);
-      grp.position.copy(n.clone().multiplyScalar(1.0003));
-      // XY 평면을 접면에 맞춤 (+z → 법선)
-      grp.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
-      grp.userData = { pulse, n };
+    // 출발·도착 지점의 붉은 타겟 (카메라를 향하는 원형, 화면상 크기 일정)
+    this.targets = [[origin, 'originTarget'], [dest, 'destTarget']].map(([ap, opt]) => {
+      const grp = this.#buildTarget();
+      Object.assign(grp.userData, { n: v3(latLonToVec(ap.lat, ap.lon)), opt });
       this.dynamic.add(grp);
       return grp;
     });
 
     this.#loadPatches();
+  }
+
+  #buildTarget() {
+    const grp = new THREE.Group();
+    grp.renderOrder = 9;
+    const red = (opacity) => new THREE.MeshBasicMaterial({ color: 0xff3b30, transparent: true, opacity, depthTest: false, depthWrite: false });
+    const dark = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.32, depthTest: false, depthWrite: false });
+    const add = (geo, mat, x = 0, y = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, 0); grp.add(m); return m; };
+    add(new THREE.RingGeometry(0.88, 1.12, 64), dark);
+    add(new THREE.RingGeometry(0.933, 1.067, 64), red(1));
+    const detail = red(1);
+    add(new THREE.RingGeometry(0.46, 0.54, 48), detail);
+    add(new THREE.CircleGeometry(0.15, 24), detail);
+    for (const [x, y, rot] of [[1.05, 0, 0], [-1.05, 0, 0], [0, 1.05, 1], [0, -1.05, 1]]) {
+      const t = add(new THREE.PlaneGeometry(0.66, 0.125), detail, x, y);
+      if (rot) t.rotation.z = Math.PI / 2;
+    }
+    const pulse = add(new THREE.RingGeometry(0.96, 1.04, 64), red(0.55));
+    grp.userData = { detail, pulse };
+    return grp;
   }
 
   async #loadPatches() {
@@ -307,7 +322,7 @@ export class GlobeScene {
   }
 
   #cameraState(t, aspect) {
-    const { intro, zoomFrom } = TIMELINE;
+    const { intro } = TIMELINE;
     const s = this.flightProgress(t);
     const p = clamp((t - this.#flyStart()) / (TIMELINE.flyEnd - this.#flyStart()), 0, 1);
     const tiltFit = this.options.mapTilt;
@@ -333,18 +348,37 @@ export class GlobeScene {
     let tilt = lerp(0, tiltFit, a);
     let psi = lerpAngle(0, psiFit, a);
 
+    // 줌인은 출발~도착의 중간 지점에서 시작해 도착 지점에서 끝난다
+    const z = smoother((s - 0.5) / 0.5);
+
     // 2) 비행기를 느슨하게 따라가기
     const planePos = this.#pointAt(s).normalize();
     const f = smooth(p / 0.7) * a;
     C = slerpV(C, planePos, 0.55 * f);
     dist *= 1 - 0.18 * f;
 
-    // 3) 도착 직전 공항으로 줌인
-    const z = smoother((p - zoomFrom) / (1 - zoomFrom));
+    // 사용자가 드래그로 옮긴 지도 위치 (화면 높이 단위). 줌인이 진행되면서 서서히 사라진다.
+    if (this.options.panX || this.options.panY) {
+      const { n, e } = localFrame(C);
+      const ps = psi * D2R;
+      const head = n.clone().multiplyScalar(Math.cos(ps)).addScaledVector(e, Math.sin(ps));
+      const right = new THREE.Vector3().crossVectors(head, C).normalize();
+      const unit = dist * 2 * TAN_HALF * (1 - z);
+      C = C.clone()
+        .addScaledVector(right, this.options.panX * unit)
+        .addScaledVector(head, (this.options.panY * unit) / Math.max(0.45, Math.cos(tilt * D2R)))
+        .normalize();
+    }
+
+    // 3) 도착 지점으로 줌인
     const arriveBearing = this.#bearingOfTangent(this.#pointAt(this.sTouch), this.#tangentAt(this.sTouch));
     if (z > 0) {
-      C = slerpV(C, this.B, z);
-      dist = Math.exp(lerp(Math.log(dist), Math.log(dEnd), z));
+      // 중심은 '비행기 ↔ 도착지'의 중간에서 시작해 도착지로 수렴하고, 거리는 둘이 함께 프레임에 들어오는 범위 아래로 내려가지 않는다
+      const mid = slerpV(planePos, this.B, 0.5);
+      C = slerpV(C, mid, smooth(z / 0.35));
+      const rem = planePos.distanceTo(this.B);
+      const keepBoth = rem * (aspect >= 1 ? 1.55 : 2.3);
+      dist = Math.max(Math.exp(lerp(Math.log(dist), Math.log(dEnd), z)), Math.min(dist, keepBoth));
       tilt = lerp(tilt, 52, z);
       // 정면 뒤가 아니라 비스듬히 보면 기체가 훨씬 잘 보인다
       psi = lerpAngle(psi, (arriveBearing - 42 + 360) % 360, z);
@@ -397,11 +431,16 @@ export class GlobeScene {
     const planePos = this.#pointAt(st.s);
     const tan = this.#tangentAt(st.s);
     const up = planePos.clone().normalize();
-    const pScale = Math.min(0.02, (0.07 + 0.05 * st.z) * st.dist);
+    // 출발 직후 기수가 수평에서 상승각으로 자연스럽게 들리도록 자세를 보간
+    const flat = tan.clone().addScaledVector(up, -tan.dot(up)).normalize();
+    tan.lerpVectors(flat, tan, smooth(st.s / 0.03)).normalize();
+    // 기체 크기: 화면 너비 대비 비율을 유지한다 (멀리 축소돼도 작아 보이지 않게). planeSize로 배율 조절
+    const aspect = w / h;
+    const pScale = (aspect >= 1 ? 0.055 : 0.09) * (1 + 0.7 * st.z) * this.options.planeSize * (2 * TAN_HALF * aspect * st.dist);
     const altitude = planePos.length() - GROUND_R;
     // 바퀴가 지면에 닿도록 기체 중심을 바퀴 길이만큼 띄운다 (지상에서만 적용)
     planePos.addScaledVector(up, 0.105 * pScale * (1 - smooth(altitude / (0.5 * pScale + 1e-6))));
-    this.plane.userData.gear.visible = altitude < 0.0025;
+    this.plane.userData.gear.visible = altitude < 0.35 * pScale;
     const x = new THREE.Vector3().crossVectors(up, tan).normalize();
     const y = new THREE.Vector3().crossVectors(tan, x).normalize();
     this.plane.matrix.makeBasis(x, y, tan).setPosition(planePos);
@@ -414,14 +453,22 @@ export class GlobeScene {
     this.trail.visible = this.trailGlow.visible = count >= 1;
     if (count >= 1) this.trailGeo.instanceCount = Math.min(this.segments, count);
 
-    // 마커 (거리에 비례한 크기 + 펄스)
-    this.markers.forEach((g, i) => {
-      g.visible = this.options.markers3d;
-      const base = Math.max(0.0012, Math.min(0.03, st.dist * 0.018));
-      const ph = (seconds * 0.8 + i * 0.4) % 1;
-      g.scale.setScalar(base);
-      g.userData.pulse.scale.setScalar(1 + ph * 1.2);
-      g.userData.pulse.material.opacity = 0.6 * (1 - ph);
+    // 붉은 타겟: 화면상 반지름을 일정하게 유지(줌인하면 도착 쪽은 커짐), 카메라를 향해 회전, 뒷면이면 숨김
+    const uPx = Math.min(w, h) / 1080;
+    this.targets.forEach((g, i) => {
+      const ground = g.userData.n.clone().multiplyScalar(GROUND_R + 0.00005);
+      const facing = g.userData.n.dot(cam.position) > 1.0005;
+      g.visible = this.options[g.userData.opt] && facing;
+      const rPx = (24 + 30 * (i ? st.z : 0)) * uPx;
+      const d = cam.position.distanceTo(ground);
+      g.position.copy(ground);
+      g.quaternion.copy(cam.quaternion);
+      g.scale.setScalar((rPx * 2 * TAN_HALF * d) / h);
+      const { detail, pulse } = g.userData;
+      detail.opacity = 1 - 0.8 * (i ? st.z : 0);
+      const ph = (seconds * 0.9 + i * 0.5) % 1;
+      pulse.scale.setScalar(1 + ph * 0.9);
+      pulse.material.opacity = 0.55 * (1 - ph);
     });
 
     this.renderer.render(this.scene, cam);
