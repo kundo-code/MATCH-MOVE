@@ -30,6 +30,12 @@ function text(ctx, str, x, y, { size, weight = 500, color = '#fff', align = 'lef
   ctx.shadowBlur = 0;
 }
 
+/** 공항 국문명을 짧게 (예: '인천국제공항 제1터미널' → '인천', '나리타국제공항' → '나리타') */
+export function shortKo(ap) {
+  const n = ap.ko || ap.en || '';
+  return n.replace(/\s*제\d\s*터미널/, '').replace(/(국제)?공항$/, '').trim() || n;
+}
+
 /** 폭을 넘으면 말줄임 */
 function fit(ctx, str, maxW) {
   if (ctx.measureText(str).width <= maxW) return str;
@@ -124,10 +130,23 @@ export function drawHud(ctx, w, h, info, meta) {
   if (meta.showCountryLabels !== false) countryLabels(ctx, info, u, meta.routeCountries);
 
   const m = 36 * u;
-  const cardH = 98 * u; // 비행거리·가는 편·오는 편만 보여주는 컴팩트 카드
+
+  // ── 하단 카드 치수: 글자 크기에 맞춰 폭·높이가 자동으로 정해진다 (박스 크기 배율은 따로) ──
   const showCard = meta.showCard !== false;
+  const cbs = meta.cardBoxScale ?? 1, cfs = meta.cardFontScale ?? 1;
+  const stats = [
+    { label: '비행 거리', value: `${Math.round(meta.distanceKm).toLocaleString('ko-KR')} km`, color: '#fff' },
+    { label: `가는 편  ${meta.origin.iata} → ${meta.dest.iata}`, value: formatDuration(meta.outMin), color: '#7dd3fc' },
+    { label: `오는 편  ${meta.dest.iata} → ${meta.origin.iata}`, value: formatDuration(meta.backMin), color: '#fcd34d' },
+  ];
+  const labelSize = 15 * u * cfs, valueSize = 28 * u * cfs;
+  const measure = (str, size, weight) => { ctx.font = `${weight} ${size}px ${FONT}`; return ctx.measureText(str).width; };
+  const colWs = stats.map((st) => Math.max(measure(st.label, labelSize, 500), measure(st.value, valueSize, 700)));
+  const colGap = 44 * u;
+  const cardW = 22 * u * 2 + colWs.reduce((x, y) => x + y, 0) + colGap * 2;
+  const cardH = 18 * u + labelSize + 8 * u + valueSize + 28 * u;
   const cyFull = h - m - cardH;
-  const cy = showCard ? h - m - cardH * sc : h;
+  const cy = showCard ? h - m - cardH * sc * cbs : h;
 
   // 공항 콜아웃: 도착지는 줌인할수록 살짝 커진다. 붉은 타겟이 있으면 그 바깥에서 선이 시작한다
   const z = info.zoom;
@@ -139,49 +158,56 @@ export function drawHud(ctx, w, h, info, meta) {
     alpha: intro * (1 - smooth((z - 0.2) / 0.5) * 0.9),
   });
   if (meta.showDestBox !== false) callout(ctx, info.dest, u, {
-    maxY: cy, scale: Math.min(sc, 0.7) * (meta.destBoxScale ?? 1), gap: gapOf(meta.showDestTarget, z, meta.destTargetScale ?? 1), color: '#ffb020', tag: '도착 · ARRIVAL', // 도착 정보박스는 항상 70% 크기
+    maxY: cy, scale: Math.min(sc, 0.7) * (meta.destBoxScale ?? 1), gap: gapOf(meta.showDestTarget, z, meta.destTargetScale ?? 1), color: '#ffb020', tag: '도착 · ARRIVAL', // 도착 정보박스는 기본 70% 크기
     name: `${meta.dest.ko || meta.dest.en}`, sub: `${meta.destCountry.ko} · ${meta.dest.iata}`,
     alpha: intro,
   });
 
-  // ── 상단: 항공사 + 노선 ──────────────────────────────────────────────
-  const topW = portrait ? w - m * 2 : 560 * u, topH = 108 * u;
-  const topX = w - m - topW; // 우측 상단
-  ctx.globalAlpha = intro;
-  ctx.save();
-  ctx.translate(w - m, m); ctx.scale(sc, sc); ctx.translate(-(w - m), -m);
-  glass(ctx, topX, m, topW, topH, 18 * u, 0.62);
-  roundRect(ctx, topX, m, 10 * u, topH, 5 * u);
-  ctx.fillStyle = meta.airline.tail; ctx.fill();
-  text(ctx, meta.airline.ko, topX + 34 * u, m + 46 * u, { size: 31 * u, weight: 700 });
-  text(ctx, meta.airline.en.toUpperCase(), topX + 34 * u, m + 78 * u, { size: 17 * u, weight: 500, color: 'rgba(255,255,255,0.65)' });
-  text(ctx, `${meta.origin.iata}  →  ${meta.dest.iata}`, topX + topW - 28 * u, m + 62 * u, { size: 44 * 0.9 * u, weight: 900, align: 'right', color: '#fff' });
-  ctx.restore();
+  // ── 우측 상단: 항공사 + 노선(영문 약어 + 작은 국문 표기) ───────────────────
+  if (meta.showTop !== false) {
+    const tbs = meta.topBoxScale ?? 1, tfs = meta.topFontScale ?? 1;
+    const kSize = 31 * u * tfs, eSize = 17 * u * tfs, rSize = 44 * 0.9 * u * tfs, sSize = 16 * u * tfs;
+    const route = `${meta.origin.iata}  →  ${meta.dest.iata}`;
+    const routeKo = `${shortKo(meta.origin)}  →  ${shortKo(meta.dest)}`;
+    const en = meta.airline.en.toUpperCase();
+    const leftW = Math.max(measure(meta.airline.ko, kSize, 700), measure(en, eSize, 500));
+    const rightW = Math.max(measure(route, rSize, 900), measure(routeKo, sSize, 500));
+    const padL = 34 * u, padR = 28 * u, gapT = 44 * u;
+    const topW = Math.min(w - m * 2, padL + leftW + gapT + rightW + padR);
+    const y1 = 15 * u + kSize, y2 = y1 + 14 * u + eSize;
+    const rBase = 12 * u + rSize * 0.95, kBase = rBase + 10 * u + sSize;
+    const topH = Math.max(y2 + 30 * u, kBase + 22 * u);
+    const topX = w - m - topW; // 우측 상단
+    ctx.save();
+    ctx.globalAlpha = intro;
+    ctx.translate(w - m, m); ctx.scale(sc * tbs, sc * tbs); ctx.translate(-(w - m), -m);
+    glass(ctx, topX, m, topW, topH, 18 * u, 0.62);
+    roundRect(ctx, topX, m, 10 * u, topH, 5 * u);
+    ctx.fillStyle = meta.airline.tail; ctx.fill();
+    text(ctx, meta.airline.ko, topX + padL, m + y1, { size: kSize, weight: 700 });
+    text(ctx, en, topX + padL, m + y2, { size: eSize, weight: 500, color: 'rgba(255,255,255,0.65)' });
+    text(ctx, route, topX + topW - padR, m + rBase, { size: rSize, weight: 900, align: 'right', color: '#fff' });
+    text(ctx, routeKo, topX + topW - padR, m + kBase, { size: sSize, weight: 500, align: 'right', color: 'rgba(255,255,255,0.7)' });
+    ctx.restore();
+  }
 
   if (showCard) {
     ctx.save();
-    ctx.translate(m, h - m); ctx.scale(sc, sc); ctx.translate(-m, -(h - m));
-    const cy = cyFull;
-    const cardW = Math.min(w - m * 2, 660 * u);
-    const cx = m;
-    glass(ctx, cx, cy, cardW, cardH, 18 * u, 0.7);
-    const colW = (cardW - 44 * u) / 3;
-    const stat = (i, label, value, color = '#fff') => {
-      const x = cx + 22 * u + colW * i;
-      text(ctx, label, x, cy + 30 * u, { size: 15 * u, weight: 500, color: 'rgba(255,255,255,0.62)' });
-      text(ctx, value, x, cy + 63 * u, { size: 28 * u, weight: 700, color });
-    };
-    stat(0, '비행 거리', `${Math.round(meta.distanceKm).toLocaleString('ko-KR')} km`);
-    stat(1, `가는 편  ${meta.origin.iata} → ${meta.dest.iata}`, formatDuration(meta.outMin), '#7dd3fc');
-    stat(2, `오는 편  ${meta.dest.iata} → ${meta.origin.iata}`, formatDuration(meta.backMin), '#fcd34d');
-
+    ctx.translate(m, h - m); ctx.scale(sc * cbs, sc * cbs); ctx.translate(-m, -(h - m));
+    const cy0 = cyFull, cx = m;
+    glass(ctx, cx, cy0, cardW, cardH, 18 * u, 0.7);
+    let x = cx + 22 * u;
+    stats.forEach((st, i) => {
+      text(ctx, st.label, x, cy0 + 18 * u + labelSize * 0.85, { size: labelSize, weight: 500, color: 'rgba(255,255,255,0.62)' });
+      text(ctx, st.value, x, cy0 + 18 * u + labelSize + 8 * u + valueSize * 0.85, { size: valueSize, weight: 700, color: st.color });
+      x += colWs[i] + colGap;
+    });
     // 진행 바
-    const barY = cy + cardH - 13 * u;
+    const barY = cy0 + cardH - 13 * u;
     roundRect(ctx, cx + 22 * u, barY, cardW - 44 * u, 4 * u, 2 * u);
     ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.fill();
     roundRect(ctx, cx + 22 * u, barY, Math.max(4 * u, (cardW - 44 * u) * info.p), 4 * u, 2 * u);
     ctx.fillStyle = meta.routeColor; ctx.fill();
-    ctx.globalAlpha = 1;
     ctx.restore();
   }
 

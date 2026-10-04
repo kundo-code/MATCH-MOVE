@@ -40,17 +40,31 @@ function airlineOf() { return AIRLINES.find((a) => a.id === state.airline); }
 function originOf() { return data.origins.find((a) => a.id === state.originId); }
 function destOf() { return data.destinations.find((a) => a.id === state.destId); }
 
+const AIRLINE_GROUPS = [
+  ['대한민국', ['KE', 'OZ', '7C', 'LJ', 'TW', 'BX', 'RS', 'ZE', 'YP']],
+  ['일본 · 중화권', ['JL', 'NH', 'CX', 'CA', 'MU', 'CI', 'BR']],
+  ['동남아시아', ['SQ', 'TG', 'VN', 'VJ', 'PR', 'MH', 'GA', 'ID', 'AK']],
+];
 function buildAirlineChips() {
   const box = $('airlines');
   box.innerHTML = '';
-  for (const a of AIRLINES) {
-    const b = document.createElement('button');
-    b.className = 'chip';
-    b.type = 'button';
-    b.innerHTML = `<i style="background:${a.route}"></i>${a.ko}`;
-    b.setAttribute('aria-pressed', a.id === state.airline);
-    b.onclick = () => { state.airline = a.id; buildAirlineChips(); applyFlight(); };
-    box.appendChild(b);
+  for (const [title, ids] of AIRLINE_GROUPS) {
+    const sg = document.createElement('div');
+    sg.className = 'sg';
+    sg.innerHTML = `<div class="sg-title">${title}</div><div class="sg-body chips"></div>`;
+    const body = sg.querySelector('.sg-body');
+    for (const id of ids) {
+      const a = AIRLINES.find((x) => x.id === id);
+      if (!a) continue;
+      const b = document.createElement('button');
+      b.className = 'chip';
+      b.type = 'button';
+      b.innerHTML = `<i style="background:${a.route}"></i>${a.ko}`;
+      b.setAttribute('aria-pressed', a.id === state.airline);
+      b.onclick = () => { state.airline = a.id; buildAirlineChips(); applyFlight(); };
+      body.appendChild(b);
+    }
+    box.appendChild(sg);
   }
 }
 
@@ -60,6 +74,8 @@ function buildOrigins() {
   sel.value = state.originId;
   sel.onchange = () => { state.originId = sel.value; applyFlight(); };
 }
+
+const KO = (a, b) => a.localeCompare(b, 'ko');
 
 function buildRegions() {
   const box = $('regions');
@@ -71,53 +87,67 @@ function buildRegions() {
     b.textContent = r.ko;
     b.setAttribute('aria-pressed', r.id === state.regionId);
     b.onclick = () => {
+      // 권역을 바꾸면 국가·공항 선택은 다시 순서대로 (현재 노선은 새 공항을 고를 때까지 유지)
       state.regionId = r.id;
-      state.countryId = countriesInRegion()[0].code;
-      pickDefaultAirport();
+      state.countryId = null;
       $('search').value = '';
-      buildRegions(); buildCountries(); buildDestinations(); applyFlight();
+      buildRegions(); buildCountries(); buildDestinations(); updateStepLocks();
     };
     box.appendChild(b);
   }
 }
 
-/** 권역 안에서 공항 데이터가 있는 국가만 */
+/** 권역 안에서 공항 데이터가 있는 국가만 (가나다순) */
 function countriesInRegion() {
   const region = data.regions.find((r) => r.id === state.regionId);
   const has = new Set(data.destinations.map((a) => a.country));
-  return region.countries.filter((c) => has.has(c.code));
+  return region.countries.filter((c) => has.has(c.code)).sort((a, b) => KO(a.ko, b.ko));
 }
 
+/** 선택한 국가의 공항 (가나다순) */
 function airportsInCountry() {
-  return data.destinations.filter((a) => a.country === state.countryId);
-}
-
-function pickDefaultAirport() {
-  const list = airportsInCountry();
-  state.destId = (list.find((a) => a.iata === DEFAULT_AIRPORT[state.countryId]) || list[0]).id;
+  if (!state.countryId) return [];
+  return data.destinations.filter((a) => a.country === state.countryId).sort((a, b) => KO(a.ko || a.en, b.ko || b.en));
 }
 
 function buildCountries() {
   const sel = $('country');
   const count = (code) => data.destinations.filter((a) => a.country === code).length;
-  sel.innerHTML = countriesInRegion().map((c) => `<option value="${c.code}">${c.ko} (${c.en}) · 공항 ${count(c.code)}곳</option>`).join('');
-  sel.value = state.countryId;
+  sel.innerHTML = `<option value="" disabled ${state.countryId ? '' : 'selected'}>국가를 선택하세요</option>` +
+    countriesInRegion().map((c) => `<option value="${c.code}">${c.ko} (${c.en}) · 공항 ${count(c.code)}곳</option>`).join('');
+  sel.value = state.countryId || '';
   sel.onchange = () => {
-    state.countryId = sel.value;
-    pickDefaultAirport();
+    state.countryId = sel.value || null;
     $('search').value = '';
     buildDestinations();
-    applyFlight();
+    updateStepLocks();
   };
 }
 
 function buildDestinations() {
   const q = $('search').value.trim().toLowerCase();
-  const list = airportsInCountry().filter((a) => !q || [a.iata, a.icao, a.en, a.ko, a.city].join(' ').toLowerCase().includes(q));
+  const all = airportsInCountry();
+  const list = all.filter((a) => !q || [a.iata, a.icao, a.en, a.ko, a.city].join(' ').toLowerCase().includes(q));
   const sel = $('dest');
   sel.innerHTML = list.map((a) => `<option value="${a.id}">${a.ko || a.en} · ${a.iata}</option>`).join('');
+  // 모든 공항이 스크롤 없이 한 번에 보이도록 목록 길이를 공항 수에 맞춘다
+  sel.size = Math.max(3, list.length);
   if (list.some((a) => a.id === state.destId)) sel.value = state.destId;
+  else sel.selectedIndex = -1;
   sel.onchange = () => { state.destId = sel.value; applyFlight(); };
+  $('stpAirportHint').textContent = state.countryId ? `가나다순 · ${list.length}${q ? `/${all.length}` : ''}곳` : '';
+}
+
+/** 순서대로 선택해야 다음 단계가 활성화된다: 권역 → 국가 → 공항 */
+function updateStepLocks() {
+  const regionOk = !!state.regionId, countryOk = regionOk && !!state.countryId;
+  $('stpCountry').classList.toggle('is-locked', !regionOk);
+  $('country').disabled = !regionOk;
+  $('stpAirport').classList.toggle('is-locked', !countryOk);
+  $('dest').disabled = !countryOk;
+  $('search').disabled = !countryOk;
+  $('stpCountryHint').textContent = regionOk && !countryOk ? '← 국가를 선택하세요' : '';
+  if (!countryOk) { $('dest').innerHTML = '<option disabled>국가를 먼저 선택하세요</option>'; $('dest').size = 3; }
 }
 
 // ── 비행 정보 계산 ────────────────────────────────────────────────────
@@ -138,6 +168,11 @@ function flightMeta() {
     showCard: $('optCard').checked,
     showOriginTarget: $('optOriginTarget').checked,
     showDestTarget: $('optDestTarget').checked,
+    showTop: $('optTop').checked,
+    topBoxScale: +$('topBoxSize').value / 100,
+    topFontScale: +$('topFontSize').value / 100,
+    cardBoxScale: +$('cardBoxSize').value / 100,
+    cardFontScale: +$('cardFontSize').value / 100,
     showOriginBox: $('optOriginBox').checked,
     showDestBox: $('optDestBox').checked,
     originBoxScale: +$('originBoxSize').value / 100,
@@ -427,6 +462,8 @@ function setupPanel() {
     t('sumOriginOpt', `타겟 ${onoff('optOriginTarget')} · 박스 ${onoff('optOriginBox')}`);
     t('sumDestOpt', `타겟 ${onoff('optDestTarget')} · 박스 ${onoff('optDestBox')}`);
     t('sumPlane', `${$('planeSize').value}%`);
+    t('sumTopOpt', `${onoff('optTop')} · 박스 ${$('topBoxSize').value}% · 글자 ${$('topFontSize').value}%`);
+    t('sumCardOpt', `${onoff('optCard')} · 박스 ${$('cardBoxSize').value}% · 글자 ${$('cardFontSize').value}%`);
     t('sumDepth', `${$('depth').value}%${$('optShadow').checked ? ' · 그림자' : ''}`);
     const maps = ['optIntro', 'optBorders', 'optCountries', 'optClouds', 'optHd'].filter((id) => $(id).checked).length;
     t('sumMap', `${maps}/5 켜짐`);
@@ -436,14 +473,14 @@ function setupPanel() {
   panel.addEventListener('change', () => updateSummaries());
 
   // 접기 상태 기억 (저장소를 쓸 수 없는 환경에서도 동작)
-  const KEY = 'match-move.panel.v1';
+  const KEY = 'match-move.panel.v2';
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch { /* 무시 */ }
   const all = [...panel.querySelectorAll('details')];
   all.forEach((d, i) => {
     const id = d.dataset.sec || `grp${i}`;
     d.dataset.key = id;
-    if (id in saved) d.open = !!saved[id];
+    d.open = id in saved ? !!saved[id] : (id === 'origin' || id === 'dest'); // 기본: 출발·도착 공항만 펼침
     d.addEventListener('toggle', () => {
       saved[id] = d.open;
       try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch { /* 무시 */ }
@@ -467,6 +504,15 @@ function wirePointOptions() {
     scene.setOptions({ depth: +e.target.value / 100 });
   };
   $('optShadow').onchange = () => scene.setOptions({ planeShadow: $('optShadow').checked });
+  // 상단 항공 정보 / 하단 카드: 박스·글자 크기
+  for (const id of ['topBoxSize', 'topFontSize', 'cardBoxSize', 'cardFontSize']) {
+    $(id).oninput = (e) => { $(`${id}Out`).textContent = `${e.target.value}%`; refresh(); };
+  }
+  $('optTop').onchange = refresh;
+  // 하단 카드 표시: 타임라인 옆 스위치와 같은 값을 공유
+  const syncCard = (on) => { $('optCard').checked = on; $('optCardGrp').checked = on; scene.setOptions({ cardShown: on }); refreshMeta(); };
+  $('optCard').onchange = () => syncCard($('optCard').checked);
+  $('optCardGrp').onchange = () => syncCard($('optCardGrp').checked);
   // 출발/도착 지점별 타겟·정보박스 크기
   for (const [id, label, apply] of [
     ['originTargetSize', 'originTargetSizeOut', (v) => scene.setOptions({ originTargetScale: v })],
@@ -489,7 +535,7 @@ async function init() {
   hudCtx = hudCanvas.getContext('2d');
   window.__app = { scene, state, get meta() { return meta; }, compose: (W, H) => makeComposer(W, H), ensureAssets };
 
-  buildAirlineChips(); buildOrigins(); buildRegions(); buildCountries(); buildDestinations();
+  buildAirlineChips(); buildOrigins(); buildRegions(); buildCountries(); buildDestinations(); updateStepLocks();
   syncPreviewSize();
   await scene.ready;
   applyFlight();
@@ -504,7 +550,6 @@ async function init() {
   setupPanel();
   syncViewUi();
   $('optIntro').onchange = () => scene.setOptions({ globeIntro: $('optIntro').checked });
-  $('optCard').onchange = () => { scene.setOptions({ cardShown: $('optCard').checked }); refreshMeta(); };
   ['outMin', 'backMin'].forEach((id) => $(id).addEventListener('input', reflow));
   $('search').addEventListener('input', buildDestinations);
   $('optBorders').onchange = (e) => scene.setOptions({ borders: e.target.checked });

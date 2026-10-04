@@ -131,3 +131,37 @@ kbd { background: #16213a; border: 1px solid var(--line); border-radius: 5px; pa
   .panel-body { overflow: visible; }
   .panel-foot { position: sticky; bottom: 0; z-index: 5; }
 }
+
+/* ───────── 하위 항목 그룹(라인) ───────── */
+.sg { margin: 0 0 14px; }
+.sg:last-child { margin-bottom: 4px; }
+.sg-title { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; color: var(--accent); letter-spacing: .02em; }
+.sg-title::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, rgba(77,163,255,.35), transparent); }
+.sg-body { margin: 8px 0 0 3px; padding: 2px 0 2px 14px; border-left: 2px solid rgba(77,163,255,.22); display: grid; gap: 10px; }
+.grp > .sg { margin-left: 12px; margin-right: 12px; }
+.grp > .sg:first-of-type { margin-top: 2px; }
+.sg-body > .hint, .sg-body > .hint2 { margin: 0; }
+.sg-body.keys { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+.tl { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--mute); }
+.tl output { color: var(--text); font-weight: 700; font-size: 15px; }
+.sg-body .grid2 { display: grid; }
+.sg-body .zoomrow { margin-bottom: 0; }
+
+/* 항공사 그룹 칩 */
+.sg-body.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* 도착 공항 단계 선택 (권역 → 국가 → 공항) */
+.stepper { list-style: none; margin: 0; padding: 0; position: relative; }
+.stp { position: relative; display: flex; gap: 12px; padding-bottom: 16px; transition: opacity .15s; }
+.stp:last-child { padding-bottom: 0; }
+.stp::before { content: ''; position: absolute; left: 11px; top: 26px; bottom: 2px; width: 2px; background: rgba(77,163,255,.25); }
+.stp:last-child::before { display: none; }
+.stp-n { width: 24px; height: 24px; border-radius: 50%; flex: none; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--accent); color: #06101f; }
+.stp-c { flex: 1; min-width: 0; display: grid; gap: 8px; }
+.stp-t { font-size: 13px; font-weight: 700; display: flex; gap: 8px; align-items: baseline; }
+.stp-t small { color: var(--mute); font-weight: 400; font-size: 11.5px; }
+.stp.is-locked { opacity: .42; }
+.stp.is-locked .stp-n { background: #25314d; color: var(--mute); }
+.stp.is-locked select, .stp.is-locked input { pointer-events: none; }
+.stp select[size] { margin-top: 0; padding: 2px; }
+.stp select[size] option { padding: 3px 8px; font-size: 13px; }
