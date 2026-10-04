@@ -4,8 +4,8 @@ import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
 import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
-import { latLonToVec, buildArc, buildFlightPath, buildGroundTrack, bearingDeg, greatCircleKm, GROUND_R } from './flight.js';
-import { buildPlane } from './plane.js';
+import { latLonToVec, buildFlightPath, buildGroundTrack, bearingDeg, greatCircleKm, GROUND_R } from './flight.js';
+import { buildPlane, buildShadow } from './plane.js';
 import { buildAirportPatches } from './satellite.js';
 
 const D2R = Math.PI / 180;
@@ -54,13 +54,15 @@ export class GlobeScene {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
     this.renderer.setClearColor(0x02030a, 1);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.NeutralToneMapping;
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(VFOV, 16 / 9, 0.001, 100);
     this.maxAniso = this.renderer.capabilities.getMaxAnisotropy();
     this.flight = null;
     this.patches = new Map();
-    this.options = { borders: true, clouds: true, hdTiles: true, countryLabels: true, originTarget: true, destTarget: true, cardShown: true, mapZoom: 1, mapRotate: 0, mapTilt: 38, panX: 0, panY: 0, planeSize: 1, globeIntro: false };
+    this.options = { borders: true, clouds: true, hdTiles: true, countryLabels: true, originTarget: true, destTarget: true, cardShown: true, mapZoom: 1, mapRotate: 0, mapTilt: 38, panX: 0, panY: 0, planeSize: 1, globeIntro: false, depth: 0.6, planeShadow: true, duration: 15, wideStart: false };
     this.size = { w: 1280, h: 720 };
+    this.tmpCam = new THREE.PerspectiveCamera(VFOV, 16 / 9, 0.001, 100);
     this.#buildStatic();
   }
 
@@ -68,12 +70,14 @@ export class GlobeScene {
     const { scene } = this;
     const loader = new THREE.TextureLoader();
     const load = (url) => new Promise((res, rej) => loader.load(url, res, undefined, rej));
-    this.ready = Promise.all([load('textures/earth.jpg'), load('textures/clouds.png'), fetch('data/countries.geojson').then((r) => r.json())])
-      .then(([earth, clouds, geo]) => {
+    this.ready = Promise.all([load('textures/earth.jpg'), load('textures/clouds.png'), fetch('data/countries.geojson').then((r) => r.json()), load('textures/topology.png'), load('textures/water.png')])
+      .then(([earth, clouds, geo, topo, water]) => {
         earth.colorSpace = THREE.SRGBColorSpace;
         earth.anisotropy = this.maxAniso;
         clouds.colorSpace = THREE.SRGBColorSpace;
         this.earthMat.map = earth;
+        this.earthMat.bumpMap = topo;
+        this.earthMat.specularMap = water;
         this.earthMat.needsUpdate = true;
         this.cloudMat.map = clouds;
         this.cloudMat.needsUpdate = true;
@@ -81,7 +85,7 @@ export class GlobeScene {
         this.#buildBorders(geo);
       });
 
-    this.earthMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, metalness: 0, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+    this.earthMat = new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 45, specular: 0x333b44, bumpScale: 3, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
     this.earth = new THREE.Mesh(new THREE.SphereGeometry(1, 128, 96), this.earthMat);
     scene.add(this.earth);
 
@@ -107,7 +111,8 @@ export class GlobeScene {
     sg.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
     scene.add(new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xffffff, size: 1.4, sizeAttenuation: false, transparent: true, opacity: 0.8, depthWrite: false })));
 
-    scene.add(new THREE.AmbientLight(0xbfd3ff, 0.9));
+    this.ambient = new THREE.AmbientLight(0xbfd3ff, 0.9);
+    scene.add(this.ambient);
     this.sun = new THREE.DirectionalLight(0xffffff, 2.4);
     scene.add(this.sun, this.sun.target);
 
@@ -181,13 +186,6 @@ export class GlobeScene {
     fullMat.userData.dash = [0.05, 0.03];
     addLine(full, fullMat, 10, true);
 
-    // 귀환 경로: 흰색 점선, 살짝 옆으로 띄운 호
-    const backArc = buildArc(dest, origin, { segments: 160, lift: 0.1, groundLift: 0.0002, offset: this.chord * 0.07 });
-    const back = new LineGeometry(); back.setPositions(flat(backArc));
-    const backMat = this.#lineMat({ color: 0xffffff, linewidth: 1.4, opacity: 0.4, dashed: true, dashSize: 0.01, gapSize: 0.01 });
-    backMat.userData.dash = [0.025, 0.04];
-    addLine(back, backMat, 10, true);
-
     // 지나온 궤적: 항공사 색 실선 + 글로우
     this.trailGeo = new LineGeometry(); this.trailGeo.setPositions(flat(this.arc));
     this.trail = addLine(this.trailGeo, this.#lineMat({ color: col, linewidth: 4.2, opacity: 1 }), 11);
@@ -206,6 +204,9 @@ export class GlobeScene {
     // 날개·엔진·기어는 하위 Group이라 각각 renderOrder를 지정해야 타겟(9) 뒤에 그려진다
     this.plane.traverse((o) => { if (o.isGroup) o.renderOrder = 20; });
     this.dynamic.add(this.plane);
+    this.shadow = buildShadow();
+    this.shadow.renderOrder = 6;
+    this.dynamic.add(this.shadow);
 
     // 출발·도착 지점의 붉은 타겟 (카메라를 향하는 원형, 화면상 크기 일정)
     this.targets = [[origin, 'originTarget'], [dest, 'destTarget']].map(([ap, opt]) => {
@@ -277,11 +278,15 @@ export class GlobeScene {
 
   // ── 타임라인 ────────────────────────────────────────────────────────
   /** 지구 전체 인트로를 쓰면 이륙이 늦게, 아니면 설정한 지도 범위에서 곧바로 시작 */
+  /** 도착(정지) 시점: 기존(0.95)보다 영상 길이 기준 1초 앞당겼다 */
+  #flyEnd() { return clamp(TIMELINE.flyEnd - 1 / Math.max(4, this.options.duration), 0.55, TIMELINE.flyEnd); }
+
   #flyStart() { return this.options.globeIntro ? TIMELINE.flyStart : 0.06; }
 
   /** 시간 → 경로 진행률 s(0~1). 이륙 가속 → 순항 → 접지 후 감속 활주 */
   flightProgress(t) {
-    const { flyEnd, touchdown } = TIMELINE;
+    const { touchdown } = TIMELINE;
+    const flyEnd = this.#flyEnd();
     const flyStart = this.#flyStart();
     const p = clamp((t - flyStart) / (flyEnd - flyStart), 0, 1);
     let phi;
@@ -322,10 +327,27 @@ export class GlobeScene {
     return Math.sin(b * D2R) >= 0 ? (b - 90 + 360) % 360 : (b + 90) % 360;
   }
 
+  /** 주어진 카메라 상태에서 월드 점들의 NDC(-1~1) 좌표 */
+  #ndc(points, C, dist, tilt, psi, aspect) {
+    const cam = this.tmpCam;
+    const { n, e } = localFrame(C);
+    const ps = psi * D2R, th = tilt * D2R;
+    const head = n.clone().multiplyScalar(Math.cos(ps)).addScaledVector(e, Math.sin(ps));
+    const dir = C.clone().multiplyScalar(Math.cos(th)).addScaledVector(head, -Math.sin(th));
+    cam.aspect = aspect;
+    cam.near = 0.0005; cam.far = 100;
+    cam.updateProjectionMatrix();
+    cam.position.copy(C).addScaledVector(dir, dist);
+    cam.up.copy(head);
+    cam.lookAt(C);
+    cam.updateMatrixWorld(true);
+    return points.map((v) => v.clone().project(cam));
+  }
+
   #cameraState(t, aspect) {
     const { intro } = TIMELINE;
     const s = this.flightProgress(t);
-    const p = clamp((t - this.#flyStart()) / (TIMELINE.flyEnd - this.#flyStart()), 0, 1);
+    const p = clamp((t - this.#flyStart()) / (this.#flyEnd() - this.#flyStart()), 0, 1);
     const tiltFit = this.options.mapTilt;
     // 화면 회전: 기본 배치(경로가 가로로 지나감)에 사용자가 지정한 회전각을 더한다
     const psiFit = (this.#fitHeading(aspect) + this.options.mapRotate + 360) % 360;
@@ -337,10 +359,13 @@ export class GlobeScene {
     const ey = this.chord * Math.abs(Math.cos(rel)) * Math.cos(tiltFit * D2R);
     const margin = (aspect < 1 ? 2.0 : 1.7) / 2;
     // 사용자가 지정한 지도 확대/축소 배율(mapZoom, 1 = 두 공항이 딱 들어오는 크기)
-    const dFit = clamp(Math.max((ex * margin) / (TAN_HALF * aspect), (ey * margin) / TAN_HALF, 0.02) / this.options.mapZoom, 0.03, 3.2);
+    const dFitRaw = Math.max((ex * margin) / (TAN_HALF * aspect), (ey * margin) / TAN_HALF, 0.02);
+    // 동남아시아는 아시아 전체가 보이는 넓은 화면에서 시작 (거리가 가까울수록 조금 더 확대)
+    const wideCtx = this.options.wideStart ? 0.62 + 0.62 * this.chord : 0;
+    const dFit = clamp(Math.max(dFitRaw, wideCtx) / this.options.mapZoom, 0.03, 3.2);
     // 기본: 사용자가 설정한 지도 범위(dFit)에서 바로 시작. 인트로 옵션을 켜면 지구 전체에서 내려온다
     const dOver = this.options.globeIntro ? Math.max(2.5, dFit * 1.5) : dFit;
-    const dEnd = 0.03;
+    const dEnd = 0.05; // 도착 직전에도 비행기·타겟·정보박스·지나온 경로 일부가 함께 보이도록 이전(0.03)보다 넓게
 
     // 1) (옵션) 전체 지구 → 설정한 지도 범위
     const a = this.options.globeIntro ? smoother(t / intro) : 1;
@@ -363,21 +388,25 @@ export class GlobeScene {
     const tilt = lerp(tilt0, 52, zs);
     const psi = lerpAngle(psi0, psiEnd, zs);
 
-    // 카메라 중심: 항상 '비행기 ↔ 도착지'의 중간. 출발 시점엔 두 공항의 중간, 도착 시점엔 도착지로 수렴한다
+    // 카메라 중심/거리: '이미 지나온 경로 일부(Q) ↔ 도착지(B)'가 함께 보이도록 잡아, 줌인 중에도 경로가 충분히 길게 보인다.
+    //  · 초반(Q=출발지)에는 두 공항의 중간에 고정, 이후 점차 도착지 쪽으로 이동
+    //  · 도착 무렵에는 도착지(= 비행기가 멈추는 지점)가 화면 중앙에 오도록 수렴
     const P = this.#pointAt(s);
     const planePos = P.clone().normalize();
-    let C = slerpV(planePos, this.B, 0.5);
+    const Q = this.#pointAt(Math.max(0, s - 0.2)).normalize();
+    const wC = smoother((s - 0.5) / 0.5); // 도착 지점이 화면 중앙으로 수렴하는 정도 (경로 후반 전체에 걸쳐 완만하게)
+    let C = slerpV(slerpV(Q, this.B, 0.5), this.B, wC);
 
-    // 거리: 완만한 로그 줌(easeDist)과, 비행기·도착지가 함께 프레임에 들어오는 최소 거리(reqDist) 중 큰 값을 부드럽게 선택.
-    // 비행 거리가 가깝든 멀든 같은 규칙이라 비행기가 화면 밖으로 밀려나지 않는다.
-    const easeDist = Math.exp(lerp(Math.log(dist0), Math.log(dEnd), zs));
-    const rem = planePos.distanceTo(this.B);
+    // 거리: 완만한 로그 줌(easeDist)과 '둘 다 보이는 최소 거리(reqDist)' 중 큰 값을 부드럽게 선택
+    const zd = Math.pow(zs, 1.2); // 후반부 줌인을 조금 더 느리게 → 경로를 더 오래 보여준다
+    const easeDist = Math.exp(lerp(Math.log(dist0), Math.log(dEnd), zd));
+    const rem = Q.distanceTo(this.B) * (1 - 0.55 * wC);
     const travel = this.#bearingOfTangent(P, this.#tangentAt(s));
     const rel2 = (travel - psi) * D2R;
     const exR = rem * Math.abs(Math.sin(rel2));
     const eyR = rem * Math.abs(Math.cos(rel2)) * Math.cos(tilt * D2R);
     const zoomEff = lerp(this.options.mapZoom, 1, zs);
-    const reqDist = (Math.max((exR * margin) / (TAN_HALF * aspect), (eyR * margin) / TAN_HALF) / zoomEff) * 0.92;
+    const reqDist = (Math.max((exR * margin) / (TAN_HALF * aspect), (eyR * margin) / TAN_HALF) / zoomEff) * 0.95;
     const N = 10; // 소프트 맥스: 두 값이 교차해도 꺾이지 않는다
     let dist = Math.pow(Math.pow(easeDist, N) + Math.pow(reqDist, N), 1 / N);
     if (this.options.panX || this.options.panY) {
@@ -401,9 +430,29 @@ export class GlobeScene {
       const right = new THREE.Vector3().crossVectors(head, C).normalize();
       const unit = dist * 2 * TAN_HALF * zs * zs;
       C = C.clone()
-        .addScaledVector(right, (westbound ? 0.2 : -0.2) * unit * aspect / 1.78)
-        .addScaledVector(head, 0.07 * unit)
+        .addScaledVector(right, (westbound ? 0.12 : -0.12) * unit * aspect / 1.78)
+        .addScaledVector(head, 0.04 * unit)
         .normalize();
+    }
+    // 안전영역 보정: 도착 공항 + 위 정보박스, 비행기, (초반엔) 지나온 경로가 화면 UI(상단 박스·하단 카드)와 겹치거나
+    // 화면 밖으로 나가지 않도록, 필요한 만큼만 거리를 늘린다. 거리·방향과 무관하게 같은 규칙이 적용된다.
+    {
+      let d = dist;
+      for (let it = 0; it < 3; it++) {
+        const [nb, np, nq] = this.#ndc([this.B, P, Q], C, d, tilt, psi, aspect);
+        let f = 1;
+        const need = (v, bound) => { f = Math.max(f, Math.abs(v) / bound); };
+        // 도착지: 좌우 78%, 아래 카드(-0.50)와 위 정보박스(+0.50) 사이
+        need(nb.x, 0.78);
+        f = Math.max(f, nb.y > 0 ? nb.y / 0.5 : -nb.y / 0.5);
+        // 비행기: 화면 안쪽 90%
+        need(np.x, 0.9); need(np.y, 0.85);
+        // 지나온 경로 일부(Q): 도착이 중앙으로 수렴하면 화면 밖으로 나가도 된다
+        if (wC < 0.5) { need(nq.x, 1.0); need(nq.y, 1.0); }
+        if (f <= 1.001) break;
+        d *= Math.min(f, 2.2);
+      }
+      dist = d;
     }
     return { C, dist, tilt, psi, z, p, s };
   }
@@ -428,9 +477,22 @@ export class GlobeScene {
     cam.far = 120;
     cam.updateProjectionMatrix();
 
-    // 조명은 카메라 기준으로 고정 → 어느 각도에서도 낮 면이 보이고 가장자리만 어두워짐
-    this.sun.position.copy(cam.position).addScaledVector(head, 0.4).addScaledVector(st.C, 0.3).multiplyScalar(1.0);
+    // 입체감 조명: 카메라 왼쪽 위에서 비스듬히 비추는 주광 + 낮춘 환경광 → 지형 요철·지구 가장자리에 명암이 생긴다.
+    // 값이 클수록 대비가 커지고, 0이면 이전의 평평한 조명.
+    const dp = this.options.depth;
+    const camRight = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 0);
+    const toCam = cam.position.clone().sub(st.C).normalize();
+    this.sun.position.copy(st.C)
+      .addScaledVector(toCam, 5)
+      .addScaledVector(camRight, -lerp(0.3, 4.2, dp))
+      .addScaledVector(head, lerp(0.6, 2.4, dp));
     this.sun.target.position.copy(st.C);
+    this.sun.intensity = lerp(2.4, 3.5, dp);
+    this.ambient.intensity = lerp(0.9, 0.5, dp);
+    this.earthMat.bumpScale = 0.6 + 7 * dp;
+    // Phong 반사는 (shininess+2)/8 배로 증폭되므로 아주 작은 값이면 충분하다 (바다에만 은은한 윤기)
+    this.earthMat.specular.setScalar(lerp(0, 0.014, dp));
+    this.renderer.toneMappingExposure = lerp(1, 1.12, dp);
 
     const dCam = cam.position.length();
     this.atmoMat.uniforms.fade.value = smooth((height - 0.02) / 0.25);
@@ -469,6 +531,16 @@ export class GlobeScene {
     this.plane.matrixAutoUpdate = false;
     this.plane.matrix.scale(new THREE.Vector3(pScale, pScale, pScale));
     this.plane.matrixWorldNeedsUpdate = true;
+
+    // 비행기 그림자: 기체 바로 아래 지면 (옵션). 고도가 높을수록 옅어진다
+    const gUp = up.clone().multiplyScalar(GROUND_R + 0.00005);
+    const gFwd = tan.clone().addScaledVector(up, -tan.dot(up)).normalize();
+    const gX = new THREE.Vector3().crossVectors(up, gFwd).normalize();
+    this.shadow.visible = this.options.planeShadow;
+    this.shadow.matrixAutoUpdate = false;
+    this.shadow.matrix.makeBasis(gX, up, gFwd).setPosition(gUp).scale(new THREE.Vector3(pScale, pScale, pScale));
+    this.shadow.matrixWorldNeedsUpdate = true;
+    this.shadow.material.opacity = (0.28 + 0.2 * dp) * (1 - smooth(altitude / (25 * pScale + 1e-6)));
 
     // 지나온 궤적
     const count = Math.floor(st.s * this.segments);

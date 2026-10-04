@@ -155,6 +155,8 @@ function refreshMeta() {
 function applyFlight() {
   const o = originOf(), d = destOf(), a = airlineOf();
   refreshMeta();
+  // 동남아시아는 아시아 전체가 보이는 넓은 시작 화면이 기본
+  scene.setOptions({ wideStart: state.regionId === 'southeast-asia', duration: state.duration });
   scene.setFlight({ origin: o, dest: d, livery: a, routeColor: a.route });
   const badge = $('tilesBadge');
   badge.hidden = !$('optHd').checked;
@@ -375,6 +377,11 @@ function wirePointOptions() {
   bind('optDestTarget', 'destTarget');
   bind('optOriginBox');
   bind('optDestBox');
+  $('depth').oninput = (e) => {
+    $('depthOut').textContent = `${e.target.value}%`;
+    scene.setOptions({ depth: +e.target.value / 100 });
+  };
+  $('optShadow').onchange = () => scene.setOptions({ planeShadow: $('optShadow').checked });
   $('planeSize').oninput = (e) => {
     $('planeSizeOut').textContent = `${e.target.value}%`;
     scene.setOptions({ planeSize: +e.target.value / 100 });
@@ -408,7 +415,7 @@ async function init() {
   $('optClouds').onchange = (e) => scene.setOptions({ clouds: e.target.checked });
   $('optCountries').onchange = (e) => { scene.setOptions({ countryLabels: e.target.checked }); refreshMeta(); };
   $('optHd').onchange = (e) => { scene.setOptions({ hdTiles: e.target.checked }); refreshMeta(); };
-  $('duration').oninput = (e) => { state.duration = +e.target.value; $('durationOut').textContent = `${state.duration}초`; updateBitrateHint(); };
+  $('duration').oninput = (e) => { state.duration = +e.target.value; scene.setOptions({ duration: state.duration }); $('durationOut').textContent = `${state.duration}초`; updateBitrateHint(); };
   $('targetMB').oninput = $('fps').onchange = updateBitrateHint;
   updateBitrateHint();
   $('aspect').onchange = $('quality').onchange = syncPreviewSize;

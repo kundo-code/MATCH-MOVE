@@ -84,6 +84,15 @@
         </div>
 
         <div class="optgroup">
+          <h3>입체감 · 조명</h3>
+          <label class="zoomrow">입체감 강도 <output id="depthOut">60%</output>
+            <input id="depth" type="range" min="0" max="100" step="1" value="60" />
+            <small>측면 조명과 지형 요철로 지구에 명암을 줍니다. 0%면 평평한 조명입니다.</small>
+          </label>
+          <label class="check"><input type="checkbox" id="optShadow" checked /> 비행기 그림자</label>
+        </div>
+
+        <div class="optgroup">
           <h3>지도 표시</h3>
           <label class="check"><input type="checkbox" id="optIntro" /> 지구 전체 화면에서 시작 <small>(끄면 설정한 지도 범위에서 바로 시작)</small></label>
           <label class="check"><input type="checkbox" id="optBorders" checked /> 국경선 (GeoJSON)</label>

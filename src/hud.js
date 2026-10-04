@@ -44,7 +44,8 @@ function countryLabels(ctx, info, u, route) {
     .sort((a, b) => (route.has(b.code) - route.has(a.code)) || a.rank - b.rank);
   const fade = smooth((info.dist - 0.12) / 0.25) * smooth((3.4 - info.dist) / 1.0);
   for (const c of items) {
-    const size = (route.has(c.code) ? 21 : 17) * 0.85 * u;
+    const far = smooth((info.dist - 0.35) / 0.8); // 최대 줌아웃에 가까울수록 1
+    const size = (route.has(c.code) ? 21 : 17) * 0.85 * (1 - 0.2 * far) * u;
     ctx.font = `700 ${size}px ${FONT}`;
     const w = ctx.measureText(c.ko).width, h = size;
     const box = [c.x - w / 2 - 6 * u, c.y - h / 2 - 4 * u, w + 12 * u, h + 8 * u];
@@ -57,9 +58,9 @@ function countryLabels(ctx, info, u, route) {
 }
 
 /** 지점 위로 수직선을 올리고 그 끝에 정보박스를 중앙정렬로 배치. 박스·글자 모두 0.8배 */
-function callout(ctx, pt, u, { maxY, gap = 8, color, tag, name, sub, big = 1, alpha = 1 }) {
+function callout(ctx, pt, u, { maxY, gap = 8, color, tag, name, sub, big = 1, alpha = 1, scale = 1 }) {
   if (!pt.visible || alpha <= 0.01) return;
-  const k = 0.8 * big;
+  const k = 0.8 * big * scale;
   ctx.save();
   ctx.globalAlpha = alpha;
   const nameSize = 28 * u * k, subSize = 19 * u * k, tagSize = 17 * u * k;
@@ -116,25 +117,29 @@ export function drawHud(ctx, w, h, info, meta) {
 
   const intro = smooth(info.t / 0.08);
   const outro = 1;
+  // 지구를 크게 줌아웃한 화면에서는 정보 요소를 70%로 줄여 지도가 가려지지 않게 한다 (줌인하면 원래 크기로)
+  const far = smooth((info.dist - 0.35) / 0.8);
+  const sc = 1 - 0.3 * far;
 
   if (meta.showCountryLabels !== false) countryLabels(ctx, info, u, meta.routeCountries);
 
   const m = 36 * u;
   const cardH = 98 * u; // 비행거리·가는 편·오는 편만 보여주는 컴팩트 카드
   const showCard = meta.showCard !== false;
-  const cy = showCard ? h - m - cardH : h;
+  const cyFull = h - m - cardH;
+  const cy = showCard ? h - m - cardH * sc : h;
 
   // 공항 콜아웃: 도착지는 줌인할수록 살짝 커진다. 붉은 타겟이 있으면 그 바깥에서 선이 시작한다
   const z = info.zoom;
   // 붉은 타겟(3D 씬)의 바깥에서 선이 시작한다. 타겟 반지름은 줌인할수록 도착 쪽만 커진다
   const gapOf = (on, zz) => (on ? 24 + 30 * zz + 4 : 8);
   if (meta.showOriginBox !== false) callout(ctx, info.origin, u, {
-    maxY: cy, gap: gapOf(meta.showOriginTarget, 0), color: '#4ade80', tag: '출발 · DEPARTURE',
+    maxY: cy, scale: sc, gap: gapOf(meta.showOriginTarget, 0), color: '#4ade80', tag: '출발 · DEPARTURE',
     name: `${meta.origin.ko || meta.origin.en}`, sub: `${meta.originCountry.ko} · ${meta.origin.iata}`,
     alpha: intro * (1 - smooth((z - 0.2) / 0.5) * 0.9),
   });
   if (meta.showDestBox !== false) callout(ctx, info.dest, u, {
-    maxY: cy, gap: gapOf(meta.showDestTarget, z), color: '#ffb020', tag: '도착 · ARRIVAL', big: 1 + 0.15 * z,
+    maxY: cy, scale: sc, gap: gapOf(meta.showDestTarget, z), color: '#ffb020', tag: '도착 · ARRIVAL', big: 1 + 0.15 * z,
     name: `${meta.dest.ko || meta.dest.en}`, sub: `${meta.destCountry.ko} · ${meta.dest.iata}`,
     alpha: intro,
   });
@@ -142,14 +147,20 @@ export function drawHud(ctx, w, h, info, meta) {
   // ── 상단: 항공사 + 노선 ──────────────────────────────────────────────
   const topW = portrait ? w - m * 2 : 560 * u, topH = 108 * u;
   ctx.globalAlpha = intro;
+  ctx.save();
+  ctx.translate(m, m); ctx.scale(sc, sc); ctx.translate(-m, -m);
   glass(ctx, m, m, topW, topH, 18 * u, 0.62);
   roundRect(ctx, m, m, 10 * u, topH, 5 * u);
   ctx.fillStyle = meta.airline.tail; ctx.fill();
   text(ctx, meta.airline.ko, m + 34 * u, m + 46 * u, { size: 31 * u, weight: 700 });
   text(ctx, meta.airline.en.toUpperCase(), m + 34 * u, m + 78 * u, { size: 17 * u, weight: 500, color: 'rgba(255,255,255,0.65)' });
   text(ctx, `${meta.origin.iata}  →  ${meta.dest.iata}`, m + topW - 28 * u, m + 62 * u, { size: 44 * 0.9 * u, weight: 900, align: 'right', color: '#fff' });
+  ctx.restore();
 
   if (showCard) {
+    ctx.save();
+    ctx.translate(m, h - m); ctx.scale(sc, sc); ctx.translate(-m, -(h - m));
+    const cy = cyFull;
     const cardW = Math.min(w - m * 2, 660 * u);
     const cx = m;
     glass(ctx, cx, cy, cardW, cardH, 18 * u, 0.7);
@@ -170,8 +181,10 @@ export function drawHud(ctx, w, h, info, meta) {
     roundRect(ctx, cx + 22 * u, barY, Math.max(4 * u, (cardW - 44 * u) * info.p), 4 * u, 2 * u);
     ctx.fillStyle = meta.routeColor; ctx.fill();
     ctx.globalAlpha = 1;
+    ctx.restore();
   }
 
+  ctx.globalAlpha = 1;
   // 출처
   const attr = meta.tilesActive ? `NASA Blue Marble · ${IMAGERY_ATTRIBUTION} · Natural Earth` : 'NASA Blue Marble · Natural Earth';
   text(ctx, attr, w - m, h - 16 * u, { size: 13 * u, weight: 400, color: 'rgba(255,255,255,0.5)', align: 'right' });
