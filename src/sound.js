@@ -72,7 +72,10 @@ export async function renderFlightAudio({ duration, stateAt }) {
   const master = ctx.createGain();
   const comp = ctx.createDynamicsCompressor();
   comp.threshold.value = -14; comp.ratio.value = 5;
-  master.connect(comp); comp.connect(ctx.destination);
+  const sat = ctx.createWaveShaper();
+  const sc = new Float32Array(2048); for (let i = 0; i < 2048; i++) sc[i] = Math.tanh((i / 1023.5 - 1) * 1.2) * 0.95;
+  sat.curve = sc;
+  master.connect(comp); comp.connect(sat); sat.connect(ctx.destination);
   // 시작·끝 클릭 방지 페이드
   master.gain.setValueAtTime(0, 0);
   master.gain.linearRampToValueAtTime(0.9, 0.06);
@@ -128,13 +131,13 @@ export async function renderFlightAudio({ duration, stateAt }) {
     const thump = ctx.createOscillator(); thump.type = 'sine';
     const tg = ctx.createGain();
     thump.frequency.setValueAtTime(95, tdTime); thump.frequency.exponentialRampToValueAtTime(38, tdTime + 0.35);
-    tg.gain.setValueAtTime(0, tdTime); tg.gain.linearRampToValueAtTime(0.95, tdTime + 0.012); tg.gain.exponentialRampToValueAtTime(0.001, tdTime + 0.45);
+    tg.gain.setValueAtTime(0, tdTime); tg.gain.linearRampToValueAtTime(0.6, tdTime + 0.012); tg.gain.exponentialRampToValueAtTime(0.001, tdTime + 0.45);
     thump.connect(tg); tg.connect(master); thump.start(tdTime); thump.stop(tdTime + 0.5);
 
     const chirp = ctx.createBufferSource(); chirp.buffer = white;
     const cf = ctx.createBiquadFilter(); cf.type = 'bandpass'; cf.frequency.setValueAtTime(2400, tdTime); cf.frequency.exponentialRampToValueAtTime(1100, tdTime + 0.3); cf.Q.value = 1.4;
     const cg = ctx.createGain();
-    cg.gain.setValueAtTime(0, tdTime); cg.gain.linearRampToValueAtTime(0.5, tdTime + 0.02); cg.gain.exponentialRampToValueAtTime(0.001, tdTime + 0.38);
+    cg.gain.setValueAtTime(0, tdTime); cg.gain.linearRampToValueAtTime(0.3, tdTime + 0.02); cg.gain.exponentialRampToValueAtTime(0.001, tdTime + 0.38);
     chirp.connect(cf); cf.connect(cg); cg.connect(master); chirp.start(tdTime); chirp.stop(tdTime + 0.42);
   }
 
