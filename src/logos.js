@@ -74,15 +74,16 @@ export function drawLogoMark(ctx, a, cx, cy, r) {
       stroke(ctx, r * 0.16, '#c9a45c', () => { ctx.moveTo(-r * 0.2, r * 0.5); ctx.lineTo(-r * 0.2, -r * 0.5); ctx.arc(r * 0.05, -r * 0.2, r * 0.3, -Math.PI / 2, Math.PI / 2); ctx.lineTo(-r * 0.2, r * 0.1); });
       break;
     }
-    case 'JL': { // 붉은 학(날개 두 장) + 붉은 원
-      circle(ctx, 0, r * 0.1, r * 0.34, '#d7001e');
-      poly(ctx, [[-r, -r * 0.1], [-r * 0.3, -r * 0.7], [-r * 0.05, -r * 0.1], [-r * 0.4, r * 0.0]], '#d7001e');
-      poly(ctx, [[r, -r * 0.1], [r * 0.3, -r * 0.7], [r * 0.05, -r * 0.1], [r * 0.4, r * 0.0]], '#d7001e');
-      poly(ctx, [[-r * 0.5, r * 0.55], [0, r * 0.2], [r * 0.5, r * 0.55], [0, r * 0.95]], '#d7001e');
+    case 'JL': { // 붉은 원 + 흰 날개선
+      circle(ctx, 0, 0, r, '#d7001e');
+      stroke(ctx, r * 0.16, W, () => { ctx.moveTo(-r * 0.6, r * 0.25); ctx.quadraticCurveTo(-r * 0.1, -r * 0.7, r * 0.6, -r * 0.35); });
+      circle(ctx, r * 0.05, r * 0.3, r * 0.2, W);
       break;
     }
-    case 'NH': { // 파란 삼중 곡선
-      for (let k = 0; k < 3; k++) stroke(ctx, r * 0.2, k === 1 ? '#0a2d78' : '#1b3f94', () => { ctx.moveTo(-r, r * (0.5 - k * 0.5)); ctx.quadraticCurveTo(0, r * (-0.2 - k * 0.5), r, r * (0.4 - k * 0.5)); });
+    case 'NH': { // 파란 원 + 흰 ANA
+      circle(ctx, 0, 0, r, '#1b3f94');
+      ctx.fillStyle = W; ctx.font = `900 ${r * 0.78}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('ANA', 0, 0);
       break;
     }
     case 'CX': { // 브러시 윙

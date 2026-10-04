@@ -1,6 +1,8 @@
 // 항공사별 도색(동체·꼬리 텍스처). 첨부된 기체 사진을 참고해 주요 항공사는 개별 디자인, 나머지는 항공사 색으로 자동 생성한다.
 // 동체 캔버스: 가로 = 꼬리(0) → 기수(1), 세로 = 위(0) → 오른쪽 면(.25) → 배(.5) → 왼쪽 면(.75) → 위(1)
 
+import { drawLogoMark } from './logos.js';
+
 const FONT = "'Noto Sans KR','Helvetica Neue',Arial,sans-serif";
 
 const luminance = (hex) => {
@@ -55,8 +57,8 @@ export function liveryFor(airline) {
   const dark = luminance(airline.body) < 0.45;
   const base = {
     top: airline.body, belly: dark ? airline.body : '#e3e7ec', split: 0.3,
-    text: airline.en, textColor: dark ? '#ffffff' : airline.accent, textSize: 64, textS: 0.74,
-    engineTop: '#d3d8df', engineBottom: '#d3d8df', winglet: airline.accent, tail: airline.tail, wing: '#aeb6c1',
+    text: airline.en, textColor: dark ? '#ffffff' : airline.accent, textSize: 62, textS: 0.66,
+    engineTop: '#d3d8df', engineBottom: dark || luminance(airline.accent) > 0.8 ? '#d3d8df' : airline.accent, winglet: airline.accent, tail: airline.tail, wing: '#aeb6c1',
     kind: 'generic', airline,
   };
   switch (airline.id) {
@@ -147,7 +149,16 @@ export function paintFuselage(livery) {
       ctx.fillStyle = '#f2b705';
       for (let k = 0; k < 6; k++) { ctx.fillRect(px(0.04 + k * 0.035) - 9, 0.42 * H, 18, 18); }
     }
+    if (livery.kind === 'generic') {
+      // 창문 아래 포인트 라인(치트라인)과 기수 쪽 로고 마크
+      const A = livery.airline;
+      ctx.fillStyle = A.accent === '#ffffff' ? A.tail : A.accent;
+      ctx.fillRect(px(0.95), 0.255 * H, px(0.1) - px(0.95), 7);
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      ctx.fillRect(px(0.95), 0.255 * H + 9, px(0.1) - px(0.95), 2);
+    }
     windows(ctx, px, H);
+    if (livery.kind === 'generic') drawLogoMark(ctx, livery.airline, px(0.915), 0.115 * H, 34);
     drawText(ctx, livery.text, px(livery.textS), 0.115 * H, livery.textSize, livery.textColor,
       { weight: livery.kind === 'OZ' ? 700 : 800, italic: livery.kind !== 'OZ', spacing: livery.kind === 'OZ' ? 2 : 0 });
   });
@@ -205,9 +216,14 @@ export function paintTail(livery) {
       break;
     }
     default: {
-      ctx.fillStyle = 'rgba(255,255,255,0.16)';
-      poly(ctx, [[0, H * 0.7], [W, H * 0.3], [W, H * 0.5], [0, H * 0.9]], 'rgba(255,255,255,0.18)');
-      drawText(ctx, livery.airline.id, W * 0.5, H * 0.62, 150, luminance(livery.tail) < 0.6 ? '#ffffff' : '#222', { weight: 900, italic: true });
+      // 꼬리 색 + 사선 포인트 + 흰 원판 위의 로고 마크 + 항공사 코드
+      poly(ctx, [[0, H * 0.72], [W, H * 0.34], [W, H * 0.46], [0, H * 0.84]], 'rgba(255,255,255,0.18)');
+      poly(ctx, [[0, H * 0.86], [W, H * 0.5], [W, H * 0.54], [0, H * 0.9]], 'rgba(0,0,0,0.12)');
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,0.25)'; ctx.shadowBlur = 18;
+      ctx.beginPath(); ctx.arc(W * 0.5, H * 0.56, W * 0.34, 0, Math.PI * 2); ctx.fillStyle = '#f6f7f9'; ctx.fill();
+      ctx.restore();
+      drawLogoMark(ctx, livery.airline, W * 0.5, H * 0.56, W * 0.27);
     }
   }
   return c;

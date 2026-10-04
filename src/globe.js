@@ -61,7 +61,7 @@ export class GlobeScene {
     this.maxAniso = this.renderer.capabilities.getMaxAnisotropy();
     this.flight = null;
     this.patches = new Map();
-    this.options = { borders: true, clouds: true, hdTiles: true, countryLabels: true, originTarget: true, destTarget: true, originTargetScale: 0.55, destTargetScale: 0.5, cardShown: true, mapZoom: 1, mapRotate: 0, mapTilt: 38, panX: 0, panY: 0, planeSize: 1, globeIntro: false, endZoom: 1, endRotate: 0, endTilt: 52, endPanX: 0, endPanY: 0, depth: 0.7, planeShadow: true, duration: 8, wideStart: false, startView: 'auto' };
+    this.options = { borders: true, clouds: true, hdTiles: true, countryLabels: true, originTarget: true, destTarget: true, originTargetScale: 0.55, destTargetScale: 0.5, cardShown: true, mapZoom: 1, mapRotate: 0, mapTilt: 38, panX: 0, panY: 0, planeSize: 1, globeIntro: false, endZoom: 1, endRotate: 0, endTilt: 52, endPanX: 0, endPanY: 0, depth: 0.7, planeShadow: true, timeOfDay: 'studio', cityLights: 1, cloudAmt: 0.5, cloudSpeed: 1, atmoAmt: 1, starAmt: 0.8, duration: 8, wideStart: false, startView: 'auto' };
     this.size = { w: 1280, h: 720 };
     this.tmpCam = new THREE.PerspectiveCamera(VFOV, 16 / 9, 0.001, 100);
     // 기체에 금속 반사·하이라이트를 주는 환경 맵 (스튜디오 조명)
@@ -112,8 +112,8 @@ export class GlobeScene {
     const { scene } = this;
     const loader = new THREE.TextureLoader();
     const load = (url) => new Promise((res, rej) => loader.load(url, res, undefined, rej));
-    this.ready = Promise.all([load('textures/earth.jpg'), load('textures/clouds.png'), fetch('data/countries.geojson').then((r) => r.json()), load('textures/topology.png'), load('textures/water.png')])
-      .then(([earth, clouds, geo, topo, water]) => {
+    this.ready = Promise.all([load('textures/earth.jpg'), load('textures/clouds.png'), fetch('data/countries.geojson').then((r) => r.json()), load('textures/topology.png'), load('textures/water.png'), load('textures/night.png').catch(() => null)])
+      .then(([earth, clouds, geo, topo, water, night]) => {
         earth.colorSpace = THREE.SRGBColorSpace;
         earth.anisotropy = this.maxAniso;
         clouds.colorSpace = THREE.SRGBColorSpace;
@@ -121,6 +121,7 @@ export class GlobeScene {
         this.earthMat.normalMap = this.#buildGlobalNormal(topo);
         this.earthMat.normalMap.anisotropy = this.maxAniso;
         this.earthMat.specularMap = water;
+        if (night) { night.colorSpace = THREE.SRGBColorSpace; night.anisotropy = this.maxAniso; this.nightU.map.value = night; }
         this.earthMat.needsUpdate = true;
         this.cloudMat.map = clouds;
         this.cloudMat.needsUpdate = true;
@@ -128,7 +129,32 @@ export class GlobeScene {
         this.#buildBorders(geo);
       });
 
+    // 야경: 태양이 비추지 않는 쪽에 도시 불빛(NASA Earth at Night 계열 텍스처)을 발광으로 얹는다
+    this.nightU = { map: { value: null }, sunView: { value: new THREE.Vector3(0, 0, 1) }, lights: { value: 0 }, close: { value: 0 } };
     this.earthMat = new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 45, specular: 0x333b44, normalScale: new THREE.Vector2(1, 1), polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+    this.earthMat.onBeforeCompile = (sh) => {
+      sh.uniforms.nightMap = this.nightU.map; sh.uniforms.uSunView = this.nightU.sunView; sh.uniforms.uLights = this.nightU.lights; sh.uniforms.uClose = this.nightU.close;
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', `#include <common>
+uniform sampler2D nightMap; uniform vec3 uSunView; uniform float uLights; uniform float uClose;
+float mmHash(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float mmNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mmHash(i), mmHash(i + vec2(1.0, 0.0)), f.x), mix(mmHash(i + vec2(0.0, 1.0)), mmHash(i + vec2(1.0, 1.0)), f.x), f.y); }`)
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+#if defined( USE_MAP )
+  {
+    float ndl = dot(normalize(vNormal), uSunView);
+    float nf = smoothstep(0.10, -0.24, ndl);
+    vec3 nl = texture2D(nightMap, vMapUv).rgb;
+    // 가까이서 보면 2048px 텍스처가 뭉개져 보이므로, 대비를 높이고 잔 점 노이즈로 도시 불빛의 알갱이감을 만든다
+    vec2 q = vMapUv * vec2(2048.0, 1024.0);
+    float grain = mmNoise(q * 1.7) * 0.55 + mmNoise(q * 4.3) * 0.45;
+    vec3 lit = pow(nl, vec3(mix(1.35, 2.2, uClose)));
+    lit *= mix(1.0, 0.25 + grain * 2.0, uClose);
+    totalEmissiveRadiance += lit * vec3(1.0, 0.8, 0.52) * nf * uLights * mix(2.6, 2.0, uClose);
+  }
+#endif`);
+    };
     this.earth = new THREE.Mesh(new THREE.SphereGeometry(1, 128, 96), this.earthMat);
     scene.add(this.earth);
 
@@ -152,7 +178,8 @@ export class GlobeScene {
     }
     const sg = new THREE.BufferGeometry();
     sg.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
-    scene.add(new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xffffff, size: 1.4, sizeAttenuation: false, transparent: true, opacity: 0.8, depthWrite: false })));
+    this.starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 1.4, sizeAttenuation: false, transparent: true, opacity: 0.8, depthWrite: false });
+    scene.add(new THREE.Points(sg, this.starMat));
 
     this.ambient = new THREE.AmbientLight(0xbfd3ff, 0.9);
     scene.add(this.ambient);
@@ -562,6 +589,34 @@ export class GlobeScene {
     this.sun.target.position.copy(st.C);
     this.sun.intensity = lerp(2.4, 3.5, dp);
     this.ambient.intensity = lerp(0.9, 0.5, dp);
+    // 시간대: 스튜디오(기본) / 황혼 / 밤. 황혼·밤은 실제 태양 방향(고정)을 정해 야경 불빛이 어둠 속에서만 보이게 한다
+    const tod = this.options.timeOfDay;
+    let lights = 0, expo = 1;
+    if (tod !== 'studio' && this.M) {
+      const M = this.M, d = this.B.clone().sub(this.A);
+      const T = d.addScaledVector(M, -d.dot(M)).normalize();
+      const side = new THREE.Vector3().crossVectors(M, T);
+      const sunDir = tod === 'dusk'
+        ? T.clone().multiplyScalar(-0.95).addScaledVector(M, 0.1).addScaledVector(side, 0.25).normalize() // 출발지 쪽에서 해가 지는 방향 → 도착지가 어둠
+        : M.clone().multiplyScalar(-0.9).addScaledVector(T, 0.1).normalize();                             // 밤: 노선 전체가 그림자 쪽
+      cam.updateMatrixWorld(true);
+      this.nightU.sunView.value.copy(sunDir).transformDirection(cam.matrixWorldInverse.copy(cam.matrixWorld).invert());
+      if (tod === 'dusk') {
+        this.sun.position.copy(st.C).addScaledVector(sunDir, 5);
+        this.sun.color.set(0xffb27a); this.sun.intensity = 4.6;
+        this.ambient.color.set(0x7d8fd6); this.ambient.intensity = 0.2;
+        expo = 1.2;
+      } else {
+        this.sun.color.set(0x8fb0ff); this.sun.intensity = 0.55; // 달빛: 카메라 쪽 은은한 보조광
+        this.ambient.color.set(0x5c74c8); this.ambient.intensity = 0.28;
+        expo = 1.3;
+      }
+      lights = this.options.cityLights;
+    } else {
+      this.sun.color.set(0xffffff); this.ambient.color.set(0xbfd3ff);
+    }
+    this.nightU.lights.value = lights;
+    this.nightU.close.value = 1 - smooth((height - 0.04) / 0.8);
     const ns = 0.25 + 1.55 * dp; // 지형 노멀맵 강도
     this.earthMat.normalScale.set(ns, ns);
     if (this.patchGroup) for (const m of this.patchGroup.children) if (m.userData.hasNormal) m.material.normalScale.set(ns * 0.9, ns * 0.9);
@@ -572,13 +627,14 @@ export class GlobeScene {
     }
     // Phong 반사는 (shininess+2)/8 배로 증폭되므로 아주 작은 값이면 충분하다 (바다에만 은은한 윤기)
     this.earthMat.specular.setScalar(lerp(0, 0.014, dp));
-    this.renderer.toneMappingExposure = lerp(1, 1.12, dp);
+    this.renderer.toneMappingExposure = lerp(1, 1.12, dp) * expo;
 
     const dCam = cam.position.length();
-    this.atmoMat.uniforms.fade.value = smooth((height - 0.02) / 0.25);
-    this.cloudMat.opacity = 0.5 * smooth((height - 0.06) / 0.35);
+    this.atmoMat.uniforms.fade.value = smooth((height - 0.02) / 0.25) * this.options.atmoAmt;
+    this.starMat.opacity = this.options.starAmt;
+    this.cloudMat.opacity = this.options.cloudAmt * smooth((height - 0.06) / 0.35);
     this.clouds.visible = this.options.clouds && height > 0.06;
-    this.clouds.rotation.y = seconds * 0.004;
+    this.clouds.rotation.y = seconds * 0.004 * this.options.cloudSpeed;
     if (this.borders) this.borders.visible = this.options.borders;
     if (this.patchGroup) this.patchGroup.visible = this.options.hdTiles;
 

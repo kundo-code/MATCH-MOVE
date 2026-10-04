@@ -1,6 +1,7 @@
 // 2D 캔버스에 그리는 정보 오버레이. 미리보기와 영상/이미지 출력에 같은 함수를 쓴다.
 import { formatDuration } from './flight.js';
 import { IMAGERY_ATTRIBUTION } from './satellite.js';
+import { drawLogoMark } from './logos.js';
 
 export const FONT = "'Noto Sans KR','Pretendard','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif";
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -173,7 +174,8 @@ export function drawHud(ctx, w, h, info, meta) {
     const en = meta.airline.en.toUpperCase();
     const leftW = Math.max(measure(meta.airline.ko, kSize, 700), measure(en, eSize, 500));
     const rightW = Math.max(measure(route, rSize, 900), measure(routeKo, sSize, 500));
-    const padL = 34 * u, padR = 28 * u, gapT = 44 * u;
+    const lr = (kSize + eSize * 0.7) * 0.62, logoW = meta.showAirlineLogo === false ? 0 : lr * 2 + 14 * u;
+    const padL = 34 * u + logoW, padR = 28 * u, gapT = 44 * u;
     const topW = Math.min(w - m * 2, padL + leftW + gapT + rightW + padR);
     const y1 = 15 * u + kSize, y2 = y1 + 14 * u + eSize;
     const rBase = 12 * u + rSize * 0.95, kBase = rBase + 10 * u + sSize;
@@ -185,6 +187,7 @@ export function drawHud(ctx, w, h, info, meta) {
     glass(ctx, topX, m, topW, topH, 18 * u, 0.62);
     roundRect(ctx, topX, m, 10 * u, topH, 5 * u);
     ctx.fillStyle = meta.airline.tail; ctx.fill();
+    if (logoW) drawLogoMark(ctx, meta.airline, topX + 34 * u + lr, m + (y1 + y2 - eSize * 0.4) / 2, lr);
     text(ctx, meta.airline.ko, topX + padL, m + y1, { size: kSize, weight: 700 });
     text(ctx, en, topX + padL, m + y2, { size: eSize, weight: 500, color: 'rgba(255,255,255,0.65)' });
     text(ctx, route, topX + topW - padR, m + rBase, { size: rSize, weight: 900, align: 'right', color: '#fff' });

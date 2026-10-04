@@ -17,7 +17,7 @@ const latToY = (lat, z) => {
 const xToLon = (x, z) => (x / 2 ** z) * 360 - 180;
 const yToLat = (y, z) => (Math.atan(Math.sinh(Math.PI * (1 - (2 * y) / 2 ** z))) * 180) / Math.PI;
 
-function loadImage(url, timeoutMs) {
+function loadImageOnce(url, timeoutMs) {
   return new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
@@ -26,6 +26,16 @@ function loadImage(url, timeoutMs) {
     img.onerror = () => { clearTimeout(timer); resolve(null); };
     img.src = url;
   });
+}
+
+/** 네트워크가 잠깐 불안정해도 타일이 빠지지 않도록 최대 3번(0.8초·1.6초 간격) 시도한다 */
+export async function loadImage(url, timeoutMs) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const img = await loadImageOnce(url, timeoutMs);
+    if (img) return img;
+    await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+  }
+  return null;
 }
 
 /** n×n 타일을 한 장의 캔버스로 합성 (없는 타일은 비워 둠). 하나도 없으면 null */

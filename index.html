@@ -169,6 +169,7 @@
               <summary><i class="dot ic">▭</i>상단 항공 정보<span class="sum" id="sumTopOpt"></span></summary>
               <div class="sg"><div class="sg-title">표시</div><div class="sg-body">
                 <label class="check"><input type="checkbox" id="optTop" checked /> 항공사 · 노선(약어 + 국문) 박스</label>
+                <label class="check"><input type="checkbox" id="optAirlineLogo" checked /> 항공사 로고 마크 표시</label>
               </div></div>
               <div class="sg"><div class="sg-title">크기</div><div class="sg-body">
                 <label class="zoomrow">박스 크기 <output id="topBoxSizeOut">80%</output>
@@ -212,6 +213,36 @@
               </div></div>
               <div class="sg"><div class="sg-title">효과</div><div class="sg-body">
                 <label class="check"><input type="checkbox" id="optShadow" checked /> 비행기 그림자</label>
+              </div></div>
+            </details>
+            <details class="grp">
+              <summary><i class="dot ic">☾</i>분위기 · 시각 효과<span class="sum" id="sumFx"></span></summary>
+              <div class="sg"><div class="sg-title">시간대</div><div class="sg-body">
+                <label>조명 분위기
+                  <select id="timeOfDay">
+                    <option value="studio" selected>스튜디오 (기본)</option>
+                    <option value="dusk">황혼 — 출발은 낮, 도착은 밤</option>
+                    <option value="night">야간 — 도시 불빛</option>
+                  </select>
+                </label>
+                <label class="zoomrow">도시 불빛 세기 <output id="cityLightsOut">100%</output>
+                  <input id="cityLights" type="range" min="0" max="200" step="5" value="100" />
+                  <small>황혼·야간에서 어두운 쪽 땅에 도시 불빛이 켜집니다. 공항 주변 고해상도 타일 구간은 위성사진 그대로 어둡게 보입니다.</small>
+                </label>
+              </div></div>
+              <div class="sg"><div class="sg-title">구름 · 대기 · 별</div><div class="sg-body">
+                <label class="zoomrow">구름 양 <output id="cloudAmtOut">50%</output>
+                  <input id="cloudAmt" type="range" min="0" max="100" step="1" value="50" />
+                </label>
+                <label class="zoomrow">구름 흐르는 속도 <output id="cloudSpeedOut">100%</output>
+                  <input id="cloudSpeed" type="range" min="0" max="800" step="10" value="100" />
+                </label>
+                <label class="zoomrow">대기 빛(가장자리 글로우) <output id="atmoAmtOut">100%</output>
+                  <input id="atmoAmt" type="range" min="0" max="200" step="5" value="100" />
+                </label>
+                <label class="zoomrow">별 밝기 <output id="starAmtOut">80%</output>
+                  <input id="starAmt" type="range" min="0" max="100" step="5" value="80" />
+                </label>
               </div></div>
             </details>
             <details class="grp">

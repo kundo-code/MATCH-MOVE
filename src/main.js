@@ -215,6 +215,7 @@ function flightMeta() {
     showOriginTarget: $('optOriginTarget').checked,
     showDestTarget: $('optDestTarget').checked,
     showTop: $('optTop').checked,
+    showAirlineLogo: $('optAirlineLogo').checked,
     topBoxScale: +$('topBoxSize').value / 100,
     topFontScale: +$('topFontSize').value / 100,
     cardBoxScale: +$('cardBoxSize').value / 100,
@@ -316,10 +317,13 @@ function makeComposer(W, H) {
   };
 }
 
+/** 저장 전에 필요한 에셋을 기다린다. 타일이 너무 오래 걸리면 40초 뒤에는 기본 지구 텍스처로 진행한다 */
+const withTimeout = (p, ms) => Promise.race([p, new Promise((r) => setTimeout(() => r('timeout'), ms))]);
 async function ensureAssets() {
+  const tiles = scene.options.hdTiles ? await withTimeout(scene.tilesPromise, 40000) : null;
+  if (tiles === 'timeout') $('exportNote').textContent = '위성 타일을 불러오는 데 시간이 오래 걸려 기본 지구 텍스처로 저장합니다. (인터넷 연결을 확인해 주세요)';
   await Promise.all([
     scene.ready,
-    scene.options.hdTiles ? scene.tilesPromise : null,
     ...['400', '500', '700', '900'].map((w) => document.fonts.load(`${w} 24px "Noto Sans KR"`).catch(() => {})),
   ]);
   await document.fonts.ready;
@@ -744,6 +748,7 @@ function setupPanel() {
     t('sumPlane', `${$('planeSize').value}%`);
     t('sumTopOpt', `${onoff('optTop')} · 박스 ${$('topBoxSize').value}% · 글자 ${$('topFontSize').value}%`);
     t('sumCardOpt', `${onoff('optCard')} · 박스 ${$('cardBoxSize').value}% · 글자 ${$('cardFontSize').value}%`);
+    t('sumFx', `${{ studio: '스튜디오', dusk: '황혼', night: '야간' }[$('timeOfDay').value]} · 구름 ${$('cloudAmt').value}%`);
     t('sumDepth', `${$('depth').value}%${$('optShadow').checked ? ' · 그림자' : ''}`);
     const maps = ['optIntro', 'optBorders', 'optCountries', 'optClouds', 'optHd'].filter((id) => $(id).checked).length;
     t('sumMap', `${maps}/5 켜짐`);
@@ -791,6 +796,12 @@ function wirePointOptions() {
   document.addEventListener('keydown', unlockAudio, { once: true });
   wireAudioTracks();
   applyVolume();
+  // 분위기·시각 효과
+  $('timeOfDay').onchange = () => { scene.setOptions({ timeOfDay: $('timeOfDay').value }); };
+  for (const [id, opt, k] of [['cityLights', 'cityLights', 100], ['cloudAmt', 'cloudAmt', 100], ['cloudSpeed', 'cloudSpeed', 100], ['atmoAmt', 'atmoAmt', 100], ['starAmt', 'starAmt', 100]]) {
+    $(id).oninput = (e) => { $(`${id}Out`).textContent = `${e.target.value}%`; scene.setOptions({ [opt]: +e.target.value / k }); };
+  }
+  scene.setOptions({ cloudAmt: +$('cloudAmt').value / 100 });
   $('depth').oninput = (e) => {
     $('depthOut').textContent = `${e.target.value}%`;
     scene.setOptions({ depth: +e.target.value / 100 });
@@ -801,6 +812,7 @@ function wirePointOptions() {
     $(id).oninput = (e) => { $(`${id}Out`).textContent = `${e.target.value}%`; refresh(); };
   }
   $('optTop').onchange = refresh;
+  $('optAirlineLogo').onchange = refresh;
   // 하단 카드 표시: 타임라인 옆 스위치와 같은 값을 공유
   const syncCard = (on) => { $('optCard').checked = on; $('optCardGrp').checked = on; scene.setOptions({ cardShown: on }); refreshMeta(); };
   $('optCard').onchange = () => syncCard($('optCard').checked);
@@ -874,5 +886,12 @@ async function init() {
   document.fonts?.load(`700 20px ${FONT}`);
   requestAnimationFrame(loop);
 }
+
+// 예기치 못한 오류는 화면에 알려 준다 (저장 중이면 저장 상태도 정리)
+const reportError = (msg) => { console.error(msg); const n = $('exportNote'); if (n) n.textContent = `오류: ${String(msg).slice(0, 160)} — 새로고침 후 다시 시도해 주세요.`; };
+window.addEventListener('unhandledrejection', (e) => { if (e.reason?.name !== 'AbortError') reportError(e.reason?.message || e.reason); });
+window.addEventListener('error', (e) => reportError(e.message));
+// WebGL 컨텍스트가 사라지면(그래픽 메모리 부족 등) 안내
+glCanvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); reportError('그래픽 컨텍스트가 끊겼습니다. 4K 해상도·고품질 렌더링 옵션을 낮춰 보세요.'); });
 
 init().catch((e) => { $('loading').textContent = `초기화 실패: ${e.message}`; console.error(e); });
