@@ -1,0 +1,30 @@
+// 항공사별 기체 도색. body=동체, accent=꼬리·엔진·포인트, route=경로선 색.
+export const AIRLINES = [
+  { id: 'KE', ko: '대한항공', en: 'Korean Air', body: '#e9eef5', accent: '#5aa7d8', tail: '#5aa7d8', route: '#58b4ff' },
+  { id: 'OZ', ko: '아시아나항공', en: 'Asiana Airlines', body: '#f1f1f1', accent: '#c8102e', tail: '#c8102e', route: '#ff5a6e' },
+  { id: '7C', ko: '제주항공', en: 'Jeju Air', body: '#f26522', accent: '#ffffff', tail: '#f26522', route: '#ff8a4c' },
+  { id: 'LJ', ko: '진에어', en: 'Jin Air', body: '#f2f2f2', accent: '#6cc24a', tail: '#6cc24a', route: '#8be06b' },
+  { id: 'TW', ko: '티웨이항공', en: "T'way Air", body: '#e8161b', accent: '#ffffff', tail: '#e8161b', route: '#ff5c5f' },
+  { id: 'BX', ko: '에어부산', en: 'Air Busan', body: '#f2f4f8', accent: '#0a56a6', tail: '#0a56a6', route: '#4b9bff' },
+  { id: 'RS', ko: '에어서울', en: 'Air Seoul', body: '#f2f2f2', accent: '#27a85a', tail: '#27a85a', route: '#58d68d' },
+  { id: 'ZE', ko: '이스타항공', en: 'Eastar Jet', body: '#f2f2f2', accent: '#e4002b', tail: '#e4002b', route: '#ff6b81' },
+  { id: 'YP', ko: '에어프레미아', en: 'Air Premia', body: '#2b2f6b', accent: '#c9a45c', tail: '#c9a45c', route: '#e5c47a' },
+  { id: 'JL', ko: '일본항공', en: 'Japan Airlines', body: '#f4f4f4', accent: '#d7001e', tail: '#d7001e', route: '#ff5a6e' },
+  { id: 'NH', ko: '전일본공수(ANA)', en: 'All Nippon Airways', body: '#f2f5fa', accent: '#1b3f94', tail: '#1b3f94', route: '#5b8def' },
+  { id: 'CX', ko: '캐세이퍼시픽', en: 'Cathay Pacific', body: '#e9ecef', accent: '#00645a', tail: '#00645a', route: '#34c3a6' },
+  { id: 'CA', ko: '중국국제항공', en: 'Air China', body: '#f4f4f4', accent: '#d71920', tail: '#d71920', route: '#ff5a5f' },
+  { id: 'MU', ko: '중국동방항공', en: 'China Eastern', body: '#f4f6fa', accent: '#1f3f9a', tail: '#1f3f9a', route: '#5b8def' },
+  { id: 'CI', ko: '중화항공', en: 'China Airlines', body: '#f4f4f4', accent: '#c4002f', tail: '#c4002f', route: '#ff5a7a' },
+  { id: 'BR', ko: '에바항공', en: 'EVA Air', body: '#f2f5f2', accent: '#0f7a3c', tail: '#0f7a3c', route: '#3cc47c' },
+  { id: 'SQ', ko: '싱가포르항공', en: 'Singapore Airlines', body: '#dfe3ea', accent: '#f0a30a', tail: '#1c2b6b', route: '#ffc44d' },
+  { id: 'TG', ko: '타이항공', en: 'Thai Airways', body: '#f1ecf6', accent: '#5b2a86', tail: '#5b2a86', route: '#b27de0' },
+  { id: 'VN', ko: '베트남항공', en: 'Vietnam Airlines', body: '#eef1f5', accent: '#0a5b9b', tail: '#e5a823', route: '#f2c14e' },
+  { id: 'VJ', ko: '비엣젯항공', en: 'VietJet Air', body: '#e8161b', accent: '#ffd400', tail: '#ffd400', route: '#ffd84a' },
+  { id: 'PR', ko: '필리핀항공', en: 'Philippine Airlines', body: '#eef1f8', accent: '#0a2d78', tail: '#0a2d78', route: '#5b8def' },
+  { id: 'MH', ko: '말레이시아항공', en: 'Malaysia Airlines', body: '#eef1f8', accent: '#0a3b8f', tail: '#c4161c', route: '#ff5a5f' },
+  { id: 'ID', ko: '바틱에어', en: 'Batik Air', body: '#f4f4f4', accent: '#d6193e', tail: '#d6193e', route: '#ff5a78' },
+  { id: 'GA', ko: '가루다인도네시아', en: 'Garuda Indonesia', body: '#eef2f5', accent: '#00a3ad', tail: '#00a3ad', route: '#3ad0d8' },
+  { id: 'AK', ko: '에어아시아', en: 'AirAsia', body: '#e4002b', accent: '#ffffff', tail: '#e4002b', route: '#ff5c7a' },
+];
+
+export const DEFAULT_AIRLINE = 'KE';

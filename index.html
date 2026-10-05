@@ -1,0 +1,476 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MATCH-MOVE · 비행 경로 영상 제작기</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="panel">
+      <header class="panel-head">
+        <div>
+          <h1>MATCH-MOVE</h1>
+          <p>출발·도착 공항을 위성지도에 표시하고 비행 영상을 만듭니다</p>
+        </div>
+        <div class="head-actions">
+          <button id="expandAll" class="mini" type="button" title="모든 항목 펼치기">펼치기</button>
+          <button id="collapseAll" class="mini" type="button" title="모든 항목 접기">접기</button>
+        </div>
+      </header>
+
+      <div class="panel-body">
+        <details class="sec" data-sec="airline">
+          <summary><span class="num">1</span><span class="t">항공사</span><span class="sum" id="sumAirline"></span></summary>
+          <div class="sec-body">
+            <div id="airlines"></div>
+          </div>
+        </details>
+
+        <details class="sec" data-sec="origin" open>
+          <summary><span class="num">2</span><span class="t">출발 공항</span><span class="sum" id="sumOrigin"></span></summary>
+          <div class="sec-body">
+            <div class="sg">
+              <div class="sg-title">대한민국 국제공항</div>
+              <div class="sg-body">
+                <select id="origin"></select>
+                <p class="hint">인천은 터미널별로 선택할 수 있습니다.</p>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <details class="sec" data-sec="dest" open>
+          <summary><span class="num">3</span><span class="t">도착 공항</span><span class="sum" id="sumDest"></span></summary>
+          <div class="sec-body">
+            <ol class="stepper">
+              <li class="stp" id="stpRegion">
+                <span class="stp-n">1</span>
+                <div class="stp-c"><div class="stp-t">권역</div><div id="regions" class="chips"></div></div>
+              </li>
+              <li class="stp" id="stpCountry">
+                <span class="stp-n">2</span>
+                <div class="stp-c"><div class="stp-t">국가 <small id="stpCountryHint"></small></div><select id="country"></select></div>
+              </li>
+              <li class="stp" id="stpAirport">
+                <span class="stp-n">3</span>
+                <div class="stp-c"><div class="stp-t">공항 <small id="stpAirportHint"></small></div>
+                  <input id="search" type="search" placeholder="직접 입력해서 검색 (공항명·도시·IATA) — Enter로 첫 결과 선택" />
+                  <select id="dest"></select>
+                </div>
+              </li>
+            </ol>
+          </div>
+        </details>
+
+        <details class="sec" data-sec="time">
+          <summary><span class="num">4</span><span class="t">비행시간</span><span class="sum" id="sumTime"></span></summary>
+          <div class="sec-body">
+            <div class="sg">
+              <div class="sg-title">가는 편</div>
+              <div class="sg-body"><label class="tl">자동 추정 <output id="outAuto"></output><input id="outMin" type="number" min="1" placeholder="직접 입력 (분)" /></label></div>
+            </div>
+            <div class="sg">
+              <div class="sg-title">오는 편</div>
+              <div class="sg-body"><label class="tl">자동 추정 <output id="backAuto"></output><input id="backMin" type="number" min="1" placeholder="직접 입력 (분)" /></label></div>
+            </div>
+            <p class="hint">제트기류(서→동)를 반영한 추정치라 가는 편과 오는 편이 다릅니다. 실제 시간표 값이 있으면 분 단위로 입력하세요.</p>
+          </div>
+        </details>
+
+        <details class="sec" data-sec="view">
+          <summary><span class="num">5</span><span class="t">지도 시점</span><span class="sum" id="sumView"></span></summary>
+          <div class="sec-body">
+            <div class="sg">
+              <div class="sg-title">편집할 화면</div>
+              <div class="sg-body">
+                <div class="seg" role="tablist" aria-label="편집할 화면">
+                  <button type="button" data-viewtab="start" aria-pressed="true">▶ 시작 화면</button>
+                  <button type="button" data-viewtab="end" aria-pressed="false">■ 도착 화면</button>
+                </div>
+                <p class="hint2">지금 편집 중: <b id="viewEditing">시작 화면</b> — 탭을 고르면 미리보기가 그 시점으로 이동합니다. 애니메이션은 시작 화면에서 도착 화면으로 이어집니다.</p>
+              </div>
+            </div>
+            <div class="sg">
+              <div class="sg-title">시점 조절</div>
+              <div class="sg-body">
+                <label class="zoomrow">확대/축소 <output id="mapZoomOut">100%</output>
+                  <input id="mapZoom" type="range" min="40" max="500" step="1" value="100" />
+                </label>
+                <label class="zoomrow">회전 <output id="mapRotateOut">0°</output>
+                  <input id="mapRotate" type="range" min="-180" max="180" step="1" value="0" />
+                </label>
+                <label class="zoomrow">기울기 <output id="mapTiltOut">38°</output>
+                  <input id="mapTilt" type="range" min="0" max="70" step="1" value="38" />
+                </label>
+                <button id="viewReset" class="btn small" type="button">이 화면 초기화</button>
+              </div>
+            </div>
+            <div class="sg">
+              <div class="sg-title">시작 화면 범위</div>
+              <div class="sg-body">
+                <select id="startView">
+                  <option value="auto" selected>자동 (동남아는 넓게)</option>
+                  <option value="fit">경로에 딱 맞춤</option>
+                  <option value="wide">항상 넓게</option>
+                </select>
+              </div>
+            </div>
+            <div class="sg">
+              <div class="sg-title">마우스 조작</div>
+              <div class="sg-body keys">
+                <span><kbd>드래그</kbd> 지도 이동</span>
+                <span><kbd>Shift+드래그</kbd> 회전·기울기</span>
+                <span><kbd>휠</kbd> 확대/축소</span>
+                <span><kbd>더블클릭</kbd> 초기화</span>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <details class="sec" data-sec="display">
+          <summary><span class="num">6</span><span class="t">표시 옵션</span><span class="sum" id="sumDisplay"></span></summary>
+          <div class="sec-body">
+            <details class="grp">
+              <summary><i class="dot" style="background:#4ade80"></i>출발 지점<span class="sum" id="sumOriginOpt"></span></summary>
+              <div class="sg"><div class="sg-title">표시</div><div class="sg-body">
+                <label class="check"><input type="checkbox" id="optOriginTarget" checked /> 붉은 타겟 원형</label>
+                <label class="check"><input type="checkbox" id="optOriginBox" checked /> 정보박스 (공항명·국가)</label>
+              </div></div>
+              <div class="sg"><div class="sg-title">크기</div><div class="sg-body">
+                <label class="zoomrow">타겟 크기 <output id="originTargetSizeOut">55%</output>
+                  <input id="originTargetSize" type="range" min="40" max="250" step="1" value="55" />
+                </label>
+                <label class="zoomrow">정보박스 크기 <output id="originBoxSizeOut">70%</output>
+                  <input id="originBoxSize" type="range" min="40" max="250" step="1" value="70" />
+                </label>
+                <label class="zoomrow">정보박스 좌 ↔ 우 <output id="originBoxXOut">0</output>
+                  <input id="originBoxX" type="range" min="-50" max="50" step="1" value="0" />
+                </label>
+                <label class="zoomrow">정보박스 위 ↕ 아래 <output id="originBoxYOut">0</output>
+                  <input id="originBoxY" type="range" min="-50" max="50" step="1" value="0" />
+                  <small>화면 크기 대비 %. 옮겨도 선은 출발 지점에서 박스 모서리로 자연스럽게 이어집니다.</small>
+                </label>
+              </div></div>
+            </details>
+            <details class="grp">
+              <summary><i class="dot" style="background:#ffb020"></i>도착 지점<span class="sum" id="sumDestOpt"></span></summary>
+              <div class="sg"><div class="sg-title">표시</div><div class="sg-body">
+                <label class="check"><input type="checkbox" id="optDestTarget" checked /> 붉은 타겟 원형</label>
+                <label class="check"><input type="checkbox" id="optDestBox" checked /> 정보박스 (공항명·국가)</label>
+              </div></div>
+              <div class="sg"><div class="sg-title">크기</div><div class="sg-body">
+                <label class="zoomrow">타겟 크기 <output id="destTargetSizeOut">50%</output>
+                  <input id="destTargetSize" type="range" min="40" max="250" step="1" value="50" />
+                </label>
+                <label class="zoomrow">정보박스 크기 <output id="destBoxSizeOut">100%</output>
+                  <input id="destBoxSize" type="range" min="40" max="250" step="1" value="100" />
+                </label>
+                <label class="zoomrow">정보박스 좌 ↔ 우 <output id="destBoxXOut">0</output>
+                  <input id="destBoxX" type="range" min="-50" max="50" step="1" value="0" />
+                </label>
+                <label class="zoomrow">정보박스 위 ↕ 아래 <output id="destBoxYOut">0</output>
+                  <input id="destBoxY" type="range" min="-50" max="50" step="1" value="0" />
+                  <small>화면 크기 대비 %. 옮겨도 선은 도착 지점에서 박스 모서리로 자연스럽게 이어집니다.</small>
+                </label>
+              </div></div>
+            </details>
+            <details class="grp">
+              <summary><i class="dot ic">▭</i>상단 항공 정보<span class="sum" id="sumTopOpt"></span></summary>
+              <div class="sg"><div class="sg-title">표시</div><div class="sg-body">
+                <label class="check"><input type="checkbox" id="optTop" checked /> 항공사 · 노선(약어 + 국문) 박스</label>
+                <label class="check"><input type="checkbox" id="optAirlineLogo" checked /> 항공사 로고 마크 표시</label>
+              </div></div>
+              <div class="sg"><div class="sg-title">크기</div><div class="sg-body">
+                <label class="zoomrow">박스 크기 <output id="topBoxSizeOut">80%</output>
+                  <input id="topBoxSize" type="range" min="40" max="250" step="1" value="80" />
+                </label>
+                <label class="zoomrow">글자 크기 <output id="topFontSizeOut">70%</output>
+                  <input id="topFontSize" type="range" min="50" max="250" step="1" value="70" />
+                </label>
+              </div></div>
+            </details>
+            <details class="grp">
+              <summary><i class="dot ic">▬</i>하단 정보 카드<span class="sum" id="sumCardOpt"></span></summary>
+              <div class="sg"><div class="sg-title">표시</div><div class="sg-body">
+                <label class="check"><input type="checkbox" id="optCardGrp" checked /> 비행거리 · 가는 편 · 오는 편 카드</label>
+              </div></div>
+              <div class="sg"><div class="sg-title">크기</div><div class="sg-body">
+                <label class="zoomrow">박스 크기 <output id="cardBoxSizeOut">100%</output>
+                  <input id="cardBoxSize" type="range" min="40" max="250" step="1" value="100" />
+                </label>
+                <label class="zoomrow">글자 크기 <output id="cardFontSizeOut">70%</output>
+                  <input id="cardFontSize" type="range" min="50" max="250" step="1" value="70" />
+                </label>
+              </div></div>
+            </details>
+            <details class="grp">
+              <summary><i class="dot ic">✈</i>비행기<span class="sum" id="sumPlane"></span></summary>
+              <div class="sg"><div class="sg-title">크기</div><div class="sg-body">
+                <label class="zoomrow">기체 크기 <output id="planeSizeOut">100%</output>
+                  <input id="planeSize" type="range" min="50" max="300" step="1" value="100" />
+                  <small>멀리 축소된 장면에서도 일정한 비율로 보입니다.</small>
+                </label>
+              </div></div>
+            </details>
+            <details class="grp">
+              <summary><i class="dot ic">◐</i>입체감 · 조명<span class="sum" id="sumDepth"></span></summary>
+              <div class="sg"><div class="sg-title">강도</div><div class="sg-body">
+                <label class="zoomrow">입체감 강도 <output id="depthOut">70%</output>
+                  <input id="depth" type="range" min="0" max="100" step="1" value="70" />
+                  <small>측면 조명, 지형 노멀맵, 기체 금속 반사. 0%면 평평한 조명.</small>
+                </label>
+              </div></div>
+              <div class="sg"><div class="sg-title">효과</div><div class="sg-body">
+                <label class="check"><input type="checkbox" id="optShadow" checked /> 비행기 그림자</label>
+              </div></div>
+            </details>
+            <details class="grp">
+              <summary><i class="dot ic">☾</i>분위기 · 시각 효과<span class="sum" id="sumFx"></span></summary>
+              <div class="sg"><div class="sg-title">시간대</div><div class="sg-body">
+                <label>조명 분위기
+                  <select id="timeOfDay">
+                    <option value="studio" selected>스튜디오 (기본)</option>
+                    <option value="dusk">황혼 — 출발은 낮, 도착은 밤</option>
+                    <option value="night">야간 — 도시 불빛</option>
+                  </select>
+                </label>
+                <label class="zoomrow">도시 불빛 세기 <output id="cityLightsOut">100%</output>
+                  <input id="cityLights" type="range" min="0" max="200" step="5" value="100" />
+                  <small>황혼·야간에서 어두운 쪽 땅에 도시 불빛이 켜집니다. 공항 주변 고해상도 타일 구간은 위성사진 그대로 어둡게 보입니다.</small>
+                </label>
+              </div></div>
+              <div class="sg"><div class="sg-title">선택 국가 강조</div><div class="sg-body">
+                <label class="check"><input type="checkbox" id="optHighlight" checked /> 출발·도착 국가를 밝게, 국경 안쪽에 음영</label>
+                <label class="zoomrow">강조 세기 <output id="highlightAmtOut">100%</output>
+                  <input id="highlightAmt" type="range" min="0" max="200" step="5" value="100" />
+                </label>
+              </div></div>
+              <div class="sg"><div class="sg-title">구름 · 대기 · 별</div><div class="sg-body">
+                <label class="zoomrow">구름 양 <output id="cloudAmtOut">50%</output>
+                  <input id="cloudAmt" type="range" min="0" max="100" step="1" value="50" />
+                </label>
+                <label class="zoomrow">구름 흐르는 속도 <output id="cloudSpeedOut">100%</output>
+                  <input id="cloudSpeed" type="range" min="0" max="800" step="10" value="100" />
+                </label>
+                <label class="zoomrow">대기 빛(가장자리 글로우) <output id="atmoAmtOut">100%</output>
+                  <input id="atmoAmt" type="range" min="0" max="200" step="5" value="100" />
+                </label>
+                <label class="zoomrow">별 밝기 <output id="starAmtOut">80%</output>
+                  <input id="starAmt" type="range" min="0" max="100" step="5" value="80" />
+                </label>
+              </div></div>
+            </details>
+            <details class="grp">
+              <summary><i class="dot ic">▦</i>지도 표시<span class="sum" id="sumMap"></span></summary>
+              <div class="sg"><div class="sg-title">시작</div><div class="sg-body">
+                <label class="check"><input type="checkbox" id="optIntro" /> 지구 전체 화면에서 시작</label>
+              </div></div>
+              <div class="sg"><div class="sg-title">레이어</div><div class="sg-body">
+                <label class="check"><input type="checkbox" id="optBorders" checked /> 국경선 (GeoJSON)</label>
+                <label class="check"><input type="checkbox" id="optCountries" checked /> 국가명 라벨</label>
+                <label class="check"><input type="checkbox" id="optClouds" checked /> 구름</label>
+                <label class="check"><input type="checkbox" id="optHd" checked /> 공항 주변 고해상도 위성 타일 <small>(Esri, 온라인)</small></label>
+              </div></div>
+            </details>
+          </div>
+        </details>
+
+        <details class="sec" data-sec="story">
+          <summary><span class="num">7</span><span class="t">인트로 · 아웃트로 · 자막</span><span class="sum" id="sumStory"></span></summary>
+          <div class="sec-body">
+            <p class="hint">글자에는 <b>{출발} {도착} {출발코드} {도착코드} {항공사} {국가} {거리} {시간} {귀국시간}</b> 를 쓰면 현재 노선 값으로 자동 치환됩니다. 줄바꿈은 Enter.</p>
+            <div class="sg">
+              <div class="sg-title">인트로</div>
+              <div class="sg-body">
+                <label>템플릿 <select id="introTpl"></select></label>
+                <label>제목 <textarea id="introTitle" rows="2" placeholder="예: {출발} → {도착}">{출발} → {도착}</textarea></label>
+                <label>부제 <textarea id="introSub" rows="2" placeholder="예: {항공사} · {시간}">{항공사} · 비행 {시간}</textarea></label>
+                <label class="zoomrow">표시 시간 <output id="introDurOut">2.5초</output>
+                  <input id="introDur" type="range" min="1" max="6" step="0.5" value="2.5" />
+                </label>
+              </div>
+            </div>
+            <div class="sg">
+              <div class="sg-title">아웃트로</div>
+              <div class="sg-body">
+                <label>템플릿 <select id="outroTpl"></select></label>
+                <label>제목 <textarea id="outroTitle" rows="2" placeholder="예: 다음 여행도 함께해요">구독과 좋아요 부탁드려요!</textarea></label>
+                <label>부제 <textarea id="outroSub" rows="2"></textarea></label>
+                <label class="zoomrow">표시 시간 <output id="outroDurOut">3초</output>
+                  <input id="outroDur" type="range" min="1" max="8" step="0.5" value="3" />
+                </label>
+                <label class="zoomrow">마지막 장면 연장 <output id="holdOut">0초</output>
+                  <input id="outroHold" type="range" min="0" max="8" step="0.5" value="0" />
+                  <small>도착 장면을 이 시간만큼 더 보여주고 그 위에 아웃트로를 얹습니다. 영상 길이가 그만큼 늘어납니다.</small>
+                </label>
+              </div>
+            </div>
+            <div class="sg">
+              <div class="sg-title">채널 로고 · 색상</div>
+              <div class="sg-body">
+                <div class="filerow"><label class="filebtn">로고 이미지 선택<input id="logoFile" type="file" accept="image/*" hidden /></label><span id="logoName" class="fname">선택 안 됨</span><button id="logoClear" class="link" type="button" hidden>삭제</button></div>
+                <label class="check"><input type="checkbox" id="logoWater" /> 영상 내내 우측 하단에 워터마크로 표시</label>
+                <label class="colorrow">포인트 색상 <input id="storyColor" type="color" value="#4da3ff" /></label>
+              </div>
+            </div>
+            <div class="sg">
+              <div class="sg-title">자막</div>
+              <div class="sg-body">
+                <label class="check"><input type="checkbox" id="optSubs" checked /> 자막 표시</label>
+                <div id="subList" class="sublist"></div>
+                <div class="subbtns"><button id="subAdd" class="mini" type="button">+ 자막 추가</button><button id="subAuto" class="mini" type="button">노선 자막 자동 생성</button></div>
+                <div class="grid2">
+                  <label>위치 <select id="subPos"><option value="bottom" selected>하단</option><option value="middle">중앙</option><option value="top">상단</option></select></label>
+                  <label class="check"><input type="checkbox" id="subBg" checked /> 배경 박스</label>
+                </div>
+                <label class="zoomrow">글자 크기 <output id="subSizeOut">100%</output>
+                  <input id="subSize" type="range" min="50" max="200" step="5" value="100" />
+                </label>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <details class="sec" data-sec="sound">
+          <summary><span class="num">8</span><span class="t">사운드 · 음악 · 내레이션</span><span class="sum" id="sumSound"></span></summary>
+          <div class="sec-body">
+            <div class="sg">
+              <div class="sg-title">전체</div>
+              <div class="sg-body">
+                <label class="zoomrow">마스터 음량 <output id="soundVolOut">60%</output>
+                  <input id="soundVol" type="range" min="0" max="100" step="1" value="60" />
+                </label>
+                <label class="check"><input type="checkbox" id="optSoundVideo" checked /> 저장하는 영상(MP4)에 소리 포함</label>
+                <p class="hint">미리보기와 저장 영상은 같은 소리를 씁니다. 파이널컷에서 따로 믹싱하려면 위 항목을 끄고 저장하세요. 브라우저 정책상 화면을 한 번 클릭해야 미리보기에서 소리가 납니다.</p>
+              </div>
+            </div>
+            <div class="sg">
+              <div class="sg-title">비행 사운드</div>
+              <div class="sg-body">
+                <label class="check"><input type="checkbox" id="optSound" checked /> 이륙·상승·순항·착륙 엔진음</label>
+                <label class="zoomrow">엔진음 크기 <output id="engVolOut">100%</output>
+                  <input id="engVol" type="range" min="0" max="150" step="1" value="100" />
+                </label>
+              </div>
+            </div>
+            <div class="sg">
+              <div class="sg-title">배경음악</div>
+              <div class="sg-body">
+                <div class="filerow"><label class="filebtn">음악 파일 선택<input id="bgmFile" type="file" accept="audio/*,.mp3,.m4a,.wav,.aac,.ogg" hidden /></label><span id="bgmName" class="fname">선택 안 됨</span><button id="bgmClear" class="link" type="button" hidden>삭제</button></div>
+                <label class="zoomrow">음악 크기 <output id="bgmVolOut">70%</output>
+                  <input id="bgmVol" type="range" min="0" max="150" step="1" value="70" />
+                </label>
+                <div class="grid2">
+                  <label class="zoomrow">페이드 인 <output id="bgmInOut">1초</output><input id="bgmIn" type="range" min="0" max="6" step="0.5" value="1" /></label>
+                  <label class="zoomrow">페이드 아웃 <output id="bgmOutOut">2초</output><input id="bgmOut" type="range" min="0" max="8" step="0.5" value="2" /></label>
+                </div>
+                <label class="check"><input type="checkbox" id="bgmLoop" checked /> 영상보다 짧으면 반복</label>
+              </div>
+            </div>
+            <div class="sg">
+              <div class="sg-title">내레이션</div>
+              <div class="sg-body">
+                <div class="filerow"><label class="filebtn">음성 파일 선택<input id="narrFile" type="file" accept="audio/*,.mp3,.m4a,.wav,.aac,.ogg" hidden /></label><button id="narrRec" class="mini" type="button">● 녹음</button><span id="narrName" class="fname">선택 안 됨</span><button id="narrClear" class="link" type="button" hidden>삭제</button></div>
+                <label class="zoomrow">내레이션 크기 <output id="narrVolOut">100%</output>
+                  <input id="narrVol" type="range" min="0" max="150" step="1" value="100" />
+                </label>
+                <label class="zoomrow">시작 시간 <output id="narrStartOut">0초</output>
+                  <input id="narrStart" type="range" min="0" max="30" step="0.1" value="0" />
+                </label>
+                <label class="check"><input type="checkbox" id="optDuck" checked /> 내레이션이 나오는 동안 배경음악 자동으로 줄이기</label>
+                <label class="zoomrow">줄이는 정도 <output id="duckOut">60%</output>
+                  <input id="duckAmt" type="range" min="10" max="95" step="5" value="60" />
+                </label>
+                <p class="hint">녹음: 버튼을 누르면 영상이 처음부터 재생되며 마이크로 녹음합니다(미리보기 소리는 꺼집니다). 끝나거나 다시 누르면 저장됩니다.</p>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <details class="sec" data-sec="output">
+          <summary><span class="num">9</span><span class="t">출력 설정</span><span class="sum" id="sumOutput"></span></summary>
+          <div class="sec-body">
+            <div class="sg">
+              <div class="sg-title">화면 형식</div>
+              <div class="sg-body grid2">
+                <label>비율
+                  <select id="aspect">
+                    <option value="16:9" selected>16:9 가로 (유튜브·PC)</option>
+                    <option value="9:16">9:16 세로 (쇼츠·릴스·틱톡)</option>
+                    <option value="1:1">1:1 정사각 (인스타 피드)</option>
+                  </select>
+                </label>
+                <label>해상도
+                  <select id="quality">
+                    <option value="1080" selected>FHD (짧은 변 1080px)</option>
+                    <option value="1440">QHD (짧은 변 1440px)</option>
+                    <option value="2160">4K (짧은 변 2160px)</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div class="sg">
+              <div class="sg-title">영상</div>
+              <div class="sg-body">
+                <div class="grid2">
+                  <label>프레임
+                    <select id="fps"><option value="30" selected>30 fps</option><option value="60">60 fps</option></select>
+                  </label>
+                  <label>목표 용량 (MB)
+                    <input id="targetMB" type="number" min="5" max="500" value="50" />
+                  </label>
+                </div>
+                <label class="zoomrow">영상 길이 <output id="durationOut">8초</output>
+                  <input id="duration" type="range" min="8" max="40" step="1" value="8" />
+                </label>
+              </div>
+            </div>
+            <div class="sg">
+              <div class="sg-title">품질</div>
+              <div class="sg-body">
+                <label class="check"><input type="checkbox" id="optSS" checked /> 고품질 렌더링 <small>(슈퍼샘플링 · 저장 시간이 늘어남)</small></label>
+                <p id="bitrateHint" class="hint"></p>
+              </div>
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <footer class="panel-foot">
+        <div class="actions">
+          <button id="savePng" class="btn">이미지 저장 (PNG)</button>
+          <button id="saveMp4" class="btn primary">영상 저장 (MP4)</button>
+        </div>
+        <div id="progress" class="progress" hidden>
+          <div class="bar"><i id="progressBar"></i></div>
+          <div class="row"><span id="progressText"></span><button id="cancel" class="link">취소</button></div>
+        </div>
+        <p id="exportNote" class="hint"></p>
+      </footer>
+    </aside>
+
+    <main class="stage-wrap">
+      <div id="stage" class="stage">
+        <canvas id="gl"></canvas>
+        <canvas id="hud"></canvas>
+        <div id="loading" class="loading">지구 텍스처 불러오는 중…</div>
+        <div id="tilesBadge" class="badge" hidden></div>
+      </div>
+      <div class="transport">
+        <button id="play" class="btn icon" aria-label="재생/일시정지">❚❚</button>
+        <input id="scrub" type="range" min="0" max="1000" value="0" />
+        <button id="soundBtn" class="btn icon" type="button" aria-label="사운드 켜기/끄기" title="사운드 켜기/끄기">🔊</button>
+        <input id="soundVolQ" class="volq" type="range" min="0" max="100" step="1" value="60" title="음량 60%" aria-label="음량" />
+        <label class="switch" title="좌측 하단 정보 카드 표시/숨김"><input type="checkbox" id="optCard" checked /><i></i><span>정보 카드</span></label>
+        <span id="clock">0:00 / 0:15</span>
+      </div>
+    </main>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
