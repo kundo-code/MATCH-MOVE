@@ -218,14 +218,19 @@ float mmNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
     vec2 suv = vec2(atan(-sp.z, sp.x) / 6.2831853 + 0.5, asin(clamp(sp.y, -1.0, 1.0)) / 3.1415927 + 0.5);
     float inside = texture2D(selMask, suv).r;
     float blurV = texture2D(selBlur, suv).r;
-    float edgeIn = smoothstep(1.0, 0.4, blurV) * inside;          // 국경 안쪽 가장자리 = 1
-    float edgeOut = smoothstep(0.02, 0.5, blurV) * (1.0 - inside); // 국경 바깥쪽 가장자리
+    // 빛(북서쪽)을 향한 경계는 밝게, 반대쪽 경계와 그 바깥은 어둡게 → 선택 국가가 지도에서 솟아오른 것처럼 보인다
+    vec2 L = vec2(-0.7, 0.7) * 0.0030;
+    float bevel = clamp((texture2D(selBlur, suv - L).r - texture2D(selBlur, suv + L).r) * 2.4, -1.0, 1.0);
+    float edgeIn = smoothstep(1.0, 0.35, blurV) * inside;
     vec3 c = diffuseColor.rgb;
     float lum = dot(c, vec3(0.299, 0.587, 0.114));
-    vec3 lifted = c * 1.65 + vec3(0.06, 0.065, 0.05) + c * lum * 0.4;       // 선택 영역: 밝고 선명하게
-    c = mix(c * (1.0 - 0.2 * uSel), lifted, inside * clamp(uSel, 0.0, 1.5)); // 주변은 살짝 가라앉혀 대비를 만든다
-    c *= 1.0 - 0.42 * edgeIn * uSel;                                         // 국경선 안쪽 음영(경계에서 안으로 번지는 그늘)
-    c += vec3(0.03, 0.05, 0.08) * edgeOut * uSel;                            // 국경 바깥 은은한 빛
+    vec3 lifted = c * 1.7 + vec3(0.06, 0.065, 0.05) + c * lum * 0.45;             // 선택 영역: 밝고 선명하게
+    vec3 dimmed = mix(c, vec3(lum), 0.35 * uSel) * (1.0 - 0.36 * uSel);          // 주변 땅·바다: 채도와 밝기를 낮춰 물러나게
+    c = mix(dimmed, lifted, inside * clamp(uSel, 0.0, 1.5));
+    c *= 1.0 + 0.55 * max(bevel, 0.0) * inside * uSel;                             // 빛 받는 안쪽 가장자리 하이라이트
+    c *= 1.0 - 0.38 * max(-bevel, 0.0) * inside * uSel;                            // 반대쪽 안쪽 가장자리 음영
+    c *= 1.0 - 0.34 * edgeIn * uSel;                                               // 국경선 안쪽으로 번지는 그늘
+    c *= 1.0 - 0.55 * max(-bevel, 0.0) * (1.0 - inside) * uSel;                    // 선택 영역이 드리우는 바깥 그림자
     diffuseColor.rgb = c;
   }`);
   }
@@ -235,6 +240,7 @@ float mmNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
     const key = [...codes].sort().join(',');
     if (!this.geo || key === this.selKey) return;
     this.selKey = key;
+    this.#buildSelectedBorders(codes);
     const W = 4096, H = 2048;
     const draw = (cv, w, h, blurPx) => {
       cv.width = w; cv.height = h;
@@ -280,6 +286,28 @@ float mmNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
     this.borders = new LineSegments2(g, this.borderMat);
     this.borders.frustumCulled = false;
     this.scene.add(this.borders);
+    this.borderSelMat = this.#lineMat({ color: 0xffffff, linewidth: 2.0, opacity: 0.95 });
+  }
+
+  /** 선택(출발·도착) 국가의 국경선만 따로 굵고 선명하게 */
+  #buildSelectedBorders(codes) {
+    if (!this.geo) return;
+    const pos = [];
+    for (const f of this.geo.features) {
+      if (!codes.includes(f.properties.code)) continue;
+      const polys = f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates;
+      for (const poly of polys) for (const ring of poly) {
+        for (let i = 0; i < ring.length - 1; i++) pos.push(...latLonToVec(ring[i][1], ring[i][0], 1.0005), ...latLonToVec(ring[i + 1][1], ring[i + 1][0], 1.0005));
+      }
+    }
+    if (this.bordersSel) { this.scene.remove(this.bordersSel); this.bordersSel.geometry.dispose(); }
+    if (!pos.length) { this.bordersSel = null; return; }
+    const g = new LineSegmentsGeometry();
+    g.setPositions(pos);
+    this.bordersSel = new LineSegments2(g, this.borderSelMat);
+    this.bordersSel.frustumCulled = false;
+    this.bordersSel.renderOrder = 2;
+    this.scene.add(this.bordersSel);
   }
 
   /** 비행 구성 변경 시 호출 */
@@ -287,7 +315,7 @@ float mmNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
     this.flight = { origin, dest, livery, routeColor };
     this.#buildSelectionMask([...new Set([origin.country, dest.country])]);
     this.dynamic.clear();
-    this.lineMats = this.lineMats.filter((m) => m === this.borderMat);
+    this.lineMats = this.lineMats.filter((m) => m === this.borderMat || m === this.borderSelMat);
 
     const A = latLonToVec(origin.lat, origin.lon), B = latLonToVec(dest.lat, dest.lon);
     this.A = v3(A); this.B = v3(B);
@@ -711,6 +739,7 @@ float mmNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
     this.clouds.visible = this.options.clouds && height > 0.06;
     this.clouds.rotation.y = seconds * 0.004 * this.options.cloudSpeed;
     if (this.borders) this.borders.visible = this.options.borders;
+    if (this.bordersSel) this.bordersSel.visible = this.options.borders && this.options.highlight;
     if (this.patchGroup) this.patchGroup.visible = this.options.hdTiles;
 
     const scale = h / 1080;
@@ -720,7 +749,11 @@ float mmNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
       if (m.userData.dash) { m.dashSize = st.dist * m.userData.dash[0]; m.gapSize = st.dist * m.userData.dash[1]; }
     }
     // 가까이 갈수록 국경선은 얇고 흐리게
-    if (this.borderMat) this.borderMat.opacity = 0.5 * (1 - 0.7 * smooth((0.3 - height) / 0.25));
+    // 강조가 켜져 있으면 비선택 국가 국경선은 연하게, 선택 국가 국경선은 굵고 선명하게
+    const hk = this.options.highlight ? Math.min(1, this.options.highlightAmt) : 0;
+    const near = 1 - 0.7 * smooth((0.3 - height) / 0.25);
+    if (this.borderMat) this.borderMat.opacity = 0.5 * near * (1 - 0.62 * hk);
+    if (this.borderSelMat) this.borderSelMat.opacity = Math.min(1, 0.55 + 0.45 * near);
 
     // 비행기
     const planePos = this.#pointAt(st.s);

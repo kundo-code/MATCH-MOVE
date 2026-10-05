@@ -70,7 +70,7 @@ function countryLabels(ctx, info, u, route) {
 /**
  * 지점 위쪽에 정보박스를 두고 선으로 잇는다.
  *  - 박스 아랫면은 지점에서 박스 높이의 절반만큼 위에 둔다 (비행기와 겹치지 않게)
- *  - 지점이 화면 중심 왼쪽이면 박스의 우측 하단 끝, 오른쪽이면 좌측 하단 끝으로 연결한다
+ *  - 지점이 화면 중심 왼쪽이면 박스의 우측 중앙 끝, 오른쪽이면 좌측 중앙 끝으로 연결한다 (박스는 지점의 반대 방향 위쪽)
  *  - offX/offY(화면 폭·높이 대비 비율)로 박스를 옮겨도 선은 지점에서 박스 하단 모서리로 자연스럽게 이어진다
  */
 function callout(ctx, pt, u, { maxY, gap = 8, color, tag, name, sub, big = 1, alpha = 1, scale = 1, offX = 0, offY = 0 }) {
@@ -89,21 +89,22 @@ function callout(ctx, pt, u, { maxY, gap = 8, color, tag, name, sub, big = 1, al
   const w = Math.max(wName, wSub, wTag) + padX * 2;
   const h = tagSize + nameSize + subSize + padY * 2 + 14 * u * k;
   const cw = ctx.canvas.width, ch = ctx.canvas.height;
-  const x = clamp(pt.x - w / 2 + offX * cw, 12 * u, cw - w - 12 * u);
-  const y = clamp(pt.y - gap * u - h * 0.5 - h + offY * ch, 12 * u, (maxY ?? ch) - h - 12 * u);
+  const margin = 12 * u, gapX = 16 * u * k;
+  // 지점이 화면 중심 왼쪽이면 박스는 지점 왼쪽 위(선은 박스 우측 중앙으로), 오른쪽이면 오른쪽 위(선은 좌측 중앙으로).
+  // 그쪽에 자리가 없으면 반대쪽에 둔다
+  const fitsL = pt.x - gapX - w >= margin, fitsR = pt.x + gapX + w <= cw - margin;
+  const boxLeft = pt.x < cw / 2 ? (fitsL || !fitsR) : !(fitsR || !fitsL);
+  const x = clamp((boxLeft ? pt.x - gapX - w : pt.x + gapX) + offX * cw, margin, cw - w - margin);
+  const y = clamp(pt.y - gap * u - h * 1.5 + offY * ch, margin, (maxY ?? ch) - h - margin);
 
-  // 연결선: 지점 → 박스 하단 모서리 (지점이 박스 가로 범위 밖이면 가까운 모서리)
-  const inset = 12 * u * k;
-  const leftCorner = x + inset, rightCorner = x + w - inset;
-  // 박스 가로 범위 안: 지점이 화면 중심 왼쪽이면 우측 하단, 오른쪽이면 좌측 하단. 범위 밖: 가까운 모서리
-  const useRightEnd = pt.x >= x && pt.x <= x + w ? pt.x < cw / 2 : pt.x > x + w;
-  const ax = useRightEnd ? rightCorner : leftCorner;
+  // 연결선: 지점 → 박스 옆면 중앙. 박스를 옮겨도 지점이 박스 오른쪽이면 우측 중앙, 왼쪽이면 좌측 중앙으로 붙는다
+  const ax = pt.x > x + w / 2 ? x + w : x;
   ctx.strokeStyle = color;
   ctx.lineWidth = 2 * u;
   ctx.lineCap = 'round';
   ctx.beginPath();
   ctx.moveTo(pt.x, pt.y - gap * u);
-  ctx.lineTo(ax, y + h);
+  ctx.lineTo(ax, y + h / 2);
   ctx.stroke();
 
   glass(ctx, x, y, w, h, 12 * u, 0.68);
