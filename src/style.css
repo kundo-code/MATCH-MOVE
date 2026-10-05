@@ -198,3 +198,16 @@ textarea, .sublist input[type=text] { width: 100%; background: #0e1730; color: v
 .subtime input { width: 100%; }
 .subrow .link { justify-self: end; grid-column: 1 / -1; }
 .subbtns { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* 좌측 설정: 제목 영역을 밝게 해 모두 펼쳤을 때도 구획이 한눈에 구분되게 */
+.sec { border-bottom: 0; margin-bottom: 10px; }
+.sec > summary { background: linear-gradient(90deg, #243a6e, #1b2d58); border: 1px solid rgba(130,175,255,.38); border-radius: 11px; padding: 12px 12px; box-shadow: 0 1px 0 rgba(255,255,255,.06) inset; }
+.sec > summary:hover { background: linear-gradient(90deg, #2b4580, #213563); }
+.sec[open] > summary { background: linear-gradient(90deg, #31508f, #26407a); border-color: rgba(150,190,255,.65); border-bottom-left-radius: 4px; border-bottom-right-radius: 4px; }
+.sec > summary .t { color: #fff; }
+.sec > summary .sum { color: #c3d3f2; opacity: .85; }
+.sec > summary .num { background: #4da3ff; color: #06101f; }
+.sec-body { padding: 12px 8px 14px 8px; border-left: 2px solid rgba(130,175,255,.22); margin-left: 12px; }
+.grp { border-color: rgba(130,175,255,.28); background: rgba(255,255,255,.03); }
+.grp > summary { background: #1c2c52; border-radius: 9px; }
+.grp[open] > summary { background: #243a6b; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }

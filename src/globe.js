@@ -61,7 +61,7 @@ export class GlobeScene {
     this.maxAniso = this.renderer.capabilities.getMaxAnisotropy();
     this.flight = null;
     this.patches = new Map();
-    this.options = { borders: true, clouds: true, hdTiles: true, countryLabels: true, originTarget: true, destTarget: true, originTargetScale: 0.55, destTargetScale: 0.5, cardShown: true, mapZoom: 1, mapRotate: 0, mapTilt: 38, panX: 0, panY: 0, planeSize: 1, globeIntro: false, endZoom: 1, endRotate: 0, endTilt: 52, endPanX: 0, endPanY: 0, depth: 0.7, planeShadow: true, timeOfDay: 'studio', cityLights: 1, cloudAmt: 0.5, cloudSpeed: 1, atmoAmt: 1, starAmt: 0.8, duration: 8, wideStart: false, startView: 'auto' };
+    this.options = { borders: true, clouds: true, hdTiles: true, countryLabels: true, originTarget: true, destTarget: true, originTargetScale: 0.55, destTargetScale: 0.5, cardShown: true, mapZoom: 1, mapRotate: 0, mapTilt: 38, panX: 0, panY: 0, planeSize: 1, globeIntro: false, endZoom: 1, endRotate: 0, endTilt: 52, endPanX: 0, endPanY: 0, depth: 0.7, planeShadow: true, timeOfDay: 'studio', cityLights: 1, cloudAmt: 0.5, cloudSpeed: 1, atmoAmt: 1, starAmt: 0.8, highlight: true, highlightAmt: 1, duration: 8, wideStart: false, startView: 'auto' };
     this.size = { w: 1280, h: 720 };
     this.tmpCam = new THREE.PerspectiveCamera(VFOV, 16 / 9, 0.001, 100);
     // 기체에 금속 반사·하이라이트를 주는 환경 맵 (스튜디오 조명)
@@ -126,13 +126,19 @@ export class GlobeScene {
         this.cloudMat.map = clouds;
         this.cloudMat.needsUpdate = true;
         this.geo = geo;
+        if (this.flight) this.#buildSelectionMask([...new Set([this.flight.origin.country, this.flight.dest.country])]);
         this.#buildBorders(geo);
       });
 
     // 야경: 태양이 비추지 않는 쪽에 도시 불빛(NASA Earth at Night 계열 텍스처)을 발광으로 얹는다
+    // 선택 국가 강조: 국경 안쪽을 밝히고 국경 가장자리에 음영을 준다 (마스크 텍스처 2장 + 세기)
+    const blank = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+    blank.needsUpdate = true;
+    this.selU = { mask: { value: blank }, blur: { value: blank }, k: { value: 0 } };
     this.nightU = { map: { value: null }, sunView: { value: new THREE.Vector3(0, 0, 1) }, lights: { value: 0 }, close: { value: 0 } };
     this.earthMat = new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 45, specular: 0x333b44, normalScale: new THREE.Vector2(1, 1), polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
     this.earthMat.onBeforeCompile = (sh) => {
+      this.#injectSelection(sh);
       sh.uniforms.nightMap = this.nightU.map; sh.uniforms.uSunView = this.nightU.sunView; sh.uniforms.uLights = this.nightU.lights; sh.uniforms.uClose = this.nightU.close;
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', `#include <common>
@@ -198,6 +204,65 @@ float mmNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
     return m;
   }
 
+  /** 선택 국가 강조 셰이더 조각을 지구·위성 패치 머티리얼에 주입한다 */
+  #injectSelection(sh) {
+    sh.uniforms.selMask = this.selU.mask; sh.uniforms.selBlur = this.selU.blur; sh.uniforms.uSel = this.selU.k;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vSelPos;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSelPos = position;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vSelPos; uniform sampler2D selMask; uniform sampler2D selBlur; uniform float uSel;')
+      .replace('#include <map_fragment>', `#include <map_fragment>
+  if (uSel > 0.001) {
+    vec3 sp = normalize(vSelPos);
+    vec2 suv = vec2(atan(-sp.z, sp.x) / 6.2831853 + 0.5, asin(clamp(sp.y, -1.0, 1.0)) / 3.1415927 + 0.5);
+    float inside = texture2D(selMask, suv).r;
+    float blurV = texture2D(selBlur, suv).r;
+    float edgeIn = smoothstep(1.0, 0.4, blurV) * inside;          // 국경 안쪽 가장자리 = 1
+    float edgeOut = smoothstep(0.02, 0.5, blurV) * (1.0 - inside); // 국경 바깥쪽 가장자리
+    vec3 c = diffuseColor.rgb;
+    float lum = dot(c, vec3(0.299, 0.587, 0.114));
+    vec3 lifted = c * 1.65 + vec3(0.06, 0.065, 0.05) + c * lum * 0.4;       // 선택 영역: 밝고 선명하게
+    c = mix(c * (1.0 - 0.2 * uSel), lifted, inside * clamp(uSel, 0.0, 1.5)); // 주변은 살짝 가라앉혀 대비를 만든다
+    c *= 1.0 - 0.42 * edgeIn * uSel;                                         // 국경선 안쪽 음영(경계에서 안으로 번지는 그늘)
+    c += vec3(0.03, 0.05, 0.08) * edgeOut * uSel;                            // 국경 바깥 은은한 빛
+    diffuseColor.rgb = c;
+  }`);
+  }
+
+  /** 선택한 국가들의 영역 마스크(등장방형 텍스처). 안쪽 1 / 바깥 0, 블러 버전은 경계 거리 계산용 */
+  #buildSelectionMask(codes) {
+    const key = [...codes].sort().join(',');
+    if (!this.geo || key === this.selKey) return;
+    this.selKey = key;
+    const W = 4096, H = 2048;
+    const draw = (cv, w, h, blurPx) => {
+      cv.width = w; cv.height = h;
+      const c = cv.getContext('2d');
+      c.fillStyle = '#000'; c.fillRect(0, 0, w, h);
+      c.fillStyle = '#fff';
+      if (blurPx) c.filter = `blur(${blurPx}px)`;
+      for (const f of this.geo.features) {
+        if (!codes.includes(f.properties.code)) continue;
+        const polys = f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates;
+        for (const poly of polys) {
+          c.beginPath();
+          for (const ring of poly) ring.forEach(([lon, lat], i) => {
+            const px = ((lon + 180) / 360) * w, py = ((90 - lat) / 180) * h;
+            i ? c.lineTo(px, py) : c.moveTo(px, py);
+          });
+          c.fill('evenodd');
+        }
+      }
+      return cv;
+    };
+    const mk = (cv) => { const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.NoColorSpace; t.anisotropy = this.maxAniso; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; return t; };
+    const old = [this.selU.mask.value, this.selU.blur.value];
+    this.selU.mask.value = mk(draw(document.createElement('canvas'), W, H, 0));
+    this.selU.blur.value = mk(draw(document.createElement('canvas'), 2048, 1024, 5));
+    for (const t of old) if (t && t.image && t.image.width > 1) t.dispose();
+  }
+
   #buildBorders(geo) {
     const pos = [];
     const addRing = (ring) => {
@@ -220,6 +285,7 @@ float mmNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
   /** 비행 구성 변경 시 호출 */
   setFlight({ origin, dest, livery, routeColor }) {
     this.flight = { origin, dest, livery, routeColor };
+    this.#buildSelectionMask([...new Set([origin.country, dest.country])]);
     this.dynamic.clear();
     this.lineMats = this.lineMats.filter((m) => m === this.borderMat);
 
@@ -332,7 +398,15 @@ float mmNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
     this.tilesPromise = Promise.all(jobs).then((sets) => {
       if (this.patchGroup !== group) return 0;
       let count = 0;
-      for (const s of sets) for (const m of s) { group.add(m.clone()); count++; }
+      for (const s of sets) for (const m of s) {
+        if (!m.material.userData.selHooked) {
+          m.material.userData.selHooked = true;
+          const prev = m.material.onBeforeCompile;
+          m.material.onBeforeCompile = (sh, r) => { prev?.call(m.material, sh, r); this.#injectSelection(sh); };
+          m.material.needsUpdate = true;
+        }
+        group.add(m.clone()); count++;
+      }
       this.tilesStatus = count ? 'ok' : 'none';
       this.hasTiles = count > 0;
       return count;
@@ -616,6 +690,7 @@ float mmNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
       this.sun.color.set(0xffffff); this.ambient.color.set(0xbfd3ff);
     }
     this.nightU.lights.value = lights;
+    this.selU.k.value = this.options.highlight ? this.options.highlightAmt : 0;
     this.nightU.close.value = 1 - smooth((height - 0.04) / 0.8);
     const ns = 0.25 + 1.55 * dp; // 지형 노멀맵 강도
     this.earthMat.normalScale.set(ns, ns);

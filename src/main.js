@@ -223,6 +223,8 @@ function flightMeta() {
     showOriginBox: $('optOriginBox').checked,
     showDestBox: $('optDestBox').checked,
     originBoxScale: +$('originBoxSize').value / 100,
+    originBoxX: +$('originBoxX').value / 100, originBoxY: +$('originBoxY').value / 100,
+    destBoxX: +$('destBoxX').value / 100, destBoxY: +$('destBoxY').value / 100,
     destBoxScale: +$('destBoxSize').value / 100,
     originTargetScale: +$('originTargetSize').value / 100,
     destTargetScale: +$('destTargetSize').value / 100,
@@ -797,6 +799,8 @@ function wirePointOptions() {
   wireAudioTracks();
   applyVolume();
   // 분위기·시각 효과
+  $('optHighlight').onchange = () => scene.setOptions({ highlight: $('optHighlight').checked });
+  $('highlightAmt').oninput = (e) => { $('highlightAmtOut').textContent = `${e.target.value}%`; scene.setOptions({ highlightAmt: +e.target.value / 100 }); };
   $('timeOfDay').onchange = () => { scene.setOptions({ timeOfDay: $('timeOfDay').value }); };
   for (const [id, opt, k] of [['cityLights', 'cityLights', 100], ['cloudAmt', 'cloudAmt', 100], ['cloudSpeed', 'cloudSpeed', 100], ['atmoAmt', 'atmoAmt', 100], ['starAmt', 'starAmt', 100]]) {
     $(id).oninput = (e) => { $(`${id}Out`).textContent = `${e.target.value}%`; scene.setOptions({ [opt]: +e.target.value / k }); };
@@ -825,6 +829,10 @@ function wirePointOptions() {
     ['destBoxSize', 'destBoxSizeOut', () => {}],
   ]) {
     $(id).oninput = (e) => { $(label).textContent = `${e.target.value}%`; apply(+e.target.value / 100); refresh(); };
+  }
+  // 정보박스 위치 이동
+  for (const id of ['originBoxX', 'originBoxY', 'destBoxX', 'destBoxY']) {
+    $(id).oninput = (e) => { $(`${id}Out`).textContent = e.target.value; refresh(); };
   }
   // 기본 크기값(HTML 슬라이더 값)을 씬에 반영
   scene.setOptions({ originTargetScale: +$('originTargetSize').value / 100, destTargetScale: +$('destTargetSize').value / 100 });

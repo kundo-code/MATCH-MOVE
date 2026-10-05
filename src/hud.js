@@ -53,20 +53,27 @@ function countryLabels(ctx, info, u, route) {
   for (const c of items) {
     if (c.code === 'KP') continue; // 조선민주주의인민공화국 라벨은 표시하지 않는다
     const far = smooth((info.dist - 0.35) / 0.8); // 최대 줌아웃에 가까울수록 1
-    const size = (route.has(c.code) ? 21 : 17) * 0.85 * (1 - 0.2 * far) * u;
+    const size = (route.has(c.code) ? 23 : 16) * 0.85 * (1 - 0.2 * far) * u;
     ctx.font = `700 ${size}px ${FONT}`;
     const w = ctx.measureText(c.ko).width, h = size;
     const box = [c.x - w / 2 - 6 * u, c.y - h / 2 - 4 * u, w + 12 * u, h + 8 * u];
     if (taken.some((t) => box[0] < t[0] + t[2] && box[0] + box[2] > t[0] && box[1] < t[1] + t[3] && box[1] + box[3] > t[1])) continue;
     taken.push(box);
-    ctx.globalAlpha = fade * (route.has(c.code) ? 0.95 : 0.7);
-    text(ctx, c.ko, c.x, c.y, { size, weight: 700, align: 'center', baseline: 'middle', shadow: 6 * u });
+    // 선택한(출발·도착) 국가는 또렷하게, 나머지 국가는 연한 색·낮은 불투명도로 한 단계 물러나게
+    const sel = route.has(c.code);
+    ctx.globalAlpha = fade * (sel ? 1 : 0.42);
+    text(ctx, c.ko, c.x, c.y, { size, weight: sel ? 800 : 500, color: sel ? '#ffffff' : '#c4cee0', align: 'center', baseline: 'middle', shadow: sel ? 9 * u : 4 * u });
   }
   ctx.globalAlpha = 1;
 }
 
-/** 지점 위로 수직선을 올리고 그 끝에 정보박스를 중앙정렬로 배치. 박스·글자 모두 0.8배 */
-function callout(ctx, pt, u, { maxY, gap = 8, color, tag, name, sub, big = 1, alpha = 1, scale = 1 }) {
+/**
+ * 지점 위쪽에 정보박스를 두고 선으로 잇는다.
+ *  - 박스 아랫면은 지점에서 박스 높이의 절반만큼 위에 둔다 (비행기와 겹치지 않게)
+ *  - 지점이 화면 중심 왼쪽이면 박스의 우측 하단 끝, 오른쪽이면 좌측 하단 끝으로 연결한다
+ *  - offX/offY(화면 폭·높이 대비 비율)로 박스를 옮겨도 선은 지점에서 박스 하단 모서리로 자연스럽게 이어진다
+ */
+function callout(ctx, pt, u, { maxY, gap = 8, color, tag, name, sub, big = 1, alpha = 1, scale = 1, offX = 0, offY = 0 }) {
   if (!pt.visible || alpha <= 0.01) return;
   const k = 0.8 * big * scale;
   ctx.save();
@@ -81,16 +88,22 @@ function callout(ctx, pt, u, { maxY, gap = 8, color, tag, name, sub, big = 1, al
   const padX = 18 * u * k, padY = 14 * u * k;
   const w = Math.max(wName, wSub, wTag) + padX * 2;
   const h = tagSize + nameSize + subSize + padY * 2 + 14 * u * k;
-  const lineLen = 62 * u * k;
-  const x = clamp(pt.x - w / 2, 12 * u, ctx.canvas.width - w - 12 * u);
-  const y = clamp(pt.y - gap * u - lineLen - h, 12 * u, (maxY ?? ctx.canvas.height) - h - 12 * u);
+  const cw = ctx.canvas.width, ch = ctx.canvas.height;
+  const x = clamp(pt.x - w / 2 + offX * cw, 12 * u, cw - w - 12 * u);
+  const y = clamp(pt.y - gap * u - h * 0.5 - h + offY * ch, 12 * u, (maxY ?? ch) - h - 12 * u);
 
-  // 지점에서 박스 하단 중앙으로 이어지는 선
+  // 연결선: 지점 → 박스 하단 모서리 (지점이 박스 가로 범위 밖이면 가까운 모서리)
+  const inset = 12 * u * k;
+  const leftCorner = x + inset, rightCorner = x + w - inset;
+  // 박스 가로 범위 안: 지점이 화면 중심 왼쪽이면 우측 하단, 오른쪽이면 좌측 하단. 범위 밖: 가까운 모서리
+  const useRightEnd = pt.x >= x && pt.x <= x + w ? pt.x < cw / 2 : pt.x > x + w;
+  const ax = useRightEnd ? rightCorner : leftCorner;
   ctx.strokeStyle = color;
   ctx.lineWidth = 2 * u;
+  ctx.lineCap = 'round';
   ctx.beginPath();
   ctx.moveTo(pt.x, pt.y - gap * u);
-  ctx.lineTo(clamp(pt.x, x + 10 * u, x + w - 10 * u), y + h);
+  ctx.lineTo(ax, y + h);
   ctx.stroke();
 
   glass(ctx, x, y, w, h, 12 * u, 0.68);
@@ -155,12 +168,12 @@ export function drawHud(ctx, w, h, info, meta) {
   // 붉은 타겟(3D 씬)의 바깥에서 선이 시작한다. 타겟 반지름은 줌인할수록 도착 쪽만 커진다
   const gapOf = (on, zz, k = 1) => (on ? (24 + 30 * zz) * k + 4 : 8);
   if (meta.showOriginBox !== false) callout(ctx, info.origin, u, {
-    maxY: cy, scale: sc * (meta.originBoxScale ?? 1), gap: gapOf(meta.showOriginTarget, 0, meta.originTargetScale ?? 1), color: '#4ade80', tag: '출발 · DEPARTURE',
+    maxY: cy, scale: sc * (meta.originBoxScale ?? 1), gap: gapOf(meta.showOriginTarget, 0, meta.originTargetScale ?? 1), color: '#4ade80', tag: '출발 · DEPARTURE', offX: meta.originBoxX ?? 0, offY: meta.originBoxY ?? 0,
     name: `${meta.origin.ko || meta.origin.en}`, sub: `${meta.originCountry.ko} · ${meta.origin.iata}`,
     alpha: intro * (1 - smooth((z - 0.2) / 0.5) * 0.9),
   });
   if (meta.showDestBox !== false) callout(ctx, info.dest, u, {
-    maxY: cy, scale: Math.min(sc, 0.7) * (meta.destBoxScale ?? 1), gap: gapOf(meta.showDestTarget, z, meta.destTargetScale ?? 1), color: '#ffb020', tag: '도착 · ARRIVAL', // 도착 정보박스는 기본 70% 크기
+    maxY: cy, scale: Math.min(sc, 0.7) * (meta.destBoxScale ?? 1), gap: gapOf(meta.showDestTarget, z, meta.destTargetScale ?? 1), color: '#ffb020', tag: '도착 · ARRIVAL', offX: meta.destBoxX ?? 0, offY: meta.destBoxY ?? 0, // 도착 정보박스는 기본 70% 크기
     name: `${meta.dest.ko || meta.dest.en}`, sub: `${meta.destCountry.ko} · ${meta.dest.iata}`,
     alpha: intro,
   });

@@ -2,6 +2,7 @@
 // 전부 Web Audio로 만들기 때문에 별도 음원 파일이 필요 없고, 같은 버퍼를 미리보기 재생과 MP4 오디오 트랙에 그대로 쓴다.
 // 음량·음높이는 비행 애니메이션(진행률·고도·접지)에 맞춰 자동으로 변한다.
 
+const smoothstep01 = (t) => t * t * (3 - 2 * t);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const lerp = (a, b, t) => a + (b - a) * t;
 const smooth = (t) => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
@@ -127,18 +128,70 @@ export async function renderFlightAudio({ duration, stateAt }) {
       return Math.pow(1 - q, 1.4) * 0.8;
     }), 0, duration);
 
-    // 6) 접지 순간: 둔탁한 충격음 + 타이어 마찰음(찍)
-    const thump = ctx.createOscillator(); thump.type = 'sine';
-    const tg = ctx.createGain();
-    thump.frequency.setValueAtTime(95, tdTime); thump.frequency.exponentialRampToValueAtTime(38, tdTime + 0.35);
-    tg.gain.setValueAtTime(0, tdTime); tg.gain.linearRampToValueAtTime(0.6, tdTime + 0.012); tg.gain.exponentialRampToValueAtTime(0.001, tdTime + 0.45);
-    thump.connect(tg); tg.connect(master); thump.start(tdTime); thump.stop(tdTime + 0.5);
-
-    const chirp = ctx.createBufferSource(); chirp.buffer = white;
-    const cf = ctx.createBiquadFilter(); cf.type = 'bandpass'; cf.frequency.setValueAtTime(2400, tdTime); cf.frequency.exponentialRampToValueAtTime(1100, tdTime + 0.3); cf.Q.value = 1.4;
-    const cg = ctx.createGain();
-    cg.gain.setValueAtTime(0, tdTime); cg.gain.linearRampToValueAtTime(0.3, tdTime + 0.02); cg.gain.exponentialRampToValueAtTime(0.001, tdTime + 0.38);
-    chirp.connect(cf); cf.connect(cg); cg.connect(master); chirp.start(tdTime); chirp.stop(tdTime + 0.42);
+    // 6) 접지: 주바퀴가 활주로에 닿는 소리(충격 + 타이어 마찰 찍 소리 + 연기 같은 스크럽)
+    //    → 두 번째 바퀴 쿵 → 앞바퀴 내려앉는 소리 → 활주로 이음매를 지나는 덜컹 소리 → 감속하며 잦아드는 타이어 구름 소리
+    const at = (t) => Math.min(t, duration - 0.05);
+    const burst = (buf, type, f0, f1, q, t0, dur, peak, atk = 0.006) => {
+      if (t0 >= duration - 0.05) return;
+      const src = ctx.createBufferSource(); src.buffer = buf;
+      const f = ctx.createBiquadFilter(); f.type = type; f.Q.value = q;
+      f.frequency.setValueAtTime(f0, t0); f.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t0 + dur);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(peak, t0 + atk); g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+      src.connect(f); f.connect(g); g.connect(master); src.start(t0); src.stop(at(t0 + dur + 0.05));
+    };
+    const thump = (t0, f0, f1, peak, dur) => {
+      if (t0 >= duration - 0.05) return;
+      const o = ctx.createOscillator(); o.type = 'sine';
+      const g = ctx.createGain();
+      o.frequency.setValueAtTime(f0, t0); o.frequency.exponentialRampToValueAtTime(f1, t0 + dur * 0.8);
+      g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(peak, t0 + 0.008); g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+      o.connect(g); g.connect(master); o.start(t0); o.stop(at(t0 + dur + 0.05));
+    };
+    // 주바퀴 접지
+    thump(tdTime, 105, 38, 0.62, 0.5);
+    burst(brown, 'lowpass', 220, 90, 0.7, tdTime, 0.55, 0.9);          // 기체가 내려앉는 둔탁한 울림
+    burst(white, 'bandpass', 2600, 1100, 1.8, tdTime, 0.32, 0.34, 0.003); // 타이어가 닿는 '찍' 소리
+    burst(white, 'bandpass', 900, 500, 1.2, tdTime + 0.02, 0.7, 0.22, 0.02); // 고무가 노면을 긁는 스크럽
+    // 타이어 스퀼(짧은 고음 마찰음): 속도가 붙었다가 빠르게 사라진다
+    if (tdTime < duration - 0.3) {
+      const sq = ctx.createOscillator(); sq.type = 'sawtooth';
+      const sf = ctx.createBiquadFilter(); sf.type = 'bandpass'; sf.Q.value = 6;
+      const sg = ctx.createGain();
+      sq.frequency.setValueAtTime(1150, tdTime); sq.frequency.exponentialRampToValueAtTime(620, tdTime + 0.3);
+      sf.frequency.setValueAtTime(1500, tdTime); sf.frequency.exponentialRampToValueAtTime(900, tdTime + 0.3);
+      sg.gain.setValueAtTime(0, tdTime); sg.gain.linearRampToValueAtTime(0.09, tdTime + 0.01); sg.gain.exponentialRampToValueAtTime(0.001, tdTime + 0.3);
+      sq.connect(sf); sf.connect(sg); sg.connect(master); sq.start(tdTime); sq.stop(at(tdTime + 0.35));
+    }
+    // 반대쪽 바퀴(살짝 늦게)
+    thump(tdTime + 0.1, 92, 40, 0.38, 0.35);
+    burst(white, 'bandpass', 2100, 1000, 1.6, tdTime + 0.1, 0.25, 0.2, 0.003);
+    // 스포일러·역추력 바람 소리
+    burst(white, 'bandpass', 700, 2400, 0.6, tdTime + 0.15, 1.4, 0.16, 0.25);
+    // 앞바퀴 접지
+    const noseT = tdTime + Math.min(0.95, (duration - tdTime) * 0.5);
+    thump(noseT, 72, 34, 0.36, 0.3);
+    burst(white, 'bandpass', 1400, 700, 1.4, noseT, 0.18, 0.16, 0.004);
+    // 활주로 이음매 덜컹: 간격이 점점 벌어진다(감속)
+    let tt = tdTime + 0.35, gapT = 0.075, amp = 0.2;
+    while (tt < duration - 0.15 && amp > 0.02) {
+      thump(tt, 62, 40, amp, 0.12);
+      burst(white, 'lowpass', 700, 300, 0.7, tt, 0.07, amp * 0.5, 0.002);
+      tt += gapT; gapT *= 1.1; amp *= 0.93;
+    }
+    // 타이어 구름 소리(중고역): 속도에 따라 낮아지며 사라진다
+    const hum = ctx.createBiquadFilter(); hum.type = 'bandpass'; hum.Q.value = 0.9;
+    const humGain = ctx.createGain();
+    loop(pink).connect(hum); hum.connect(humGain); humGain.connect(master);
+    curve(hum.frequency, states.map((s, i) => {
+      const q = clamp((((i - tdIndex) / (N - 1)) * duration) / Math.max(0.3, duration - tdTime), 0, 1);
+      return 900 - 500 * q;
+    }), 0, duration);
+    curve(humGain.gain, states.map((s, i) => {
+      if (i < tdIndex) return 0;
+      const q = clamp((((i - tdIndex) / (N - 1)) * duration) / Math.max(0.3, duration - tdTime), 0, 1);
+      return Math.pow(1 - q, 1.2) * 0.24 * smoothstep01(clamp((q * 6), 0, 1));
+    }), 0, duration);
   }
 
   return ctx.startRendering();

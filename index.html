@@ -148,6 +148,13 @@
                 <label class="zoomrow">정보박스 크기 <output id="originBoxSizeOut">70%</output>
                   <input id="originBoxSize" type="range" min="40" max="250" step="1" value="70" />
                 </label>
+                <label class="zoomrow">정보박스 좌 ↔ 우 <output id="originBoxXOut">0</output>
+                  <input id="originBoxX" type="range" min="-50" max="50" step="1" value="0" />
+                </label>
+                <label class="zoomrow">정보박스 위 ↕ 아래 <output id="originBoxYOut">0</output>
+                  <input id="originBoxY" type="range" min="-50" max="50" step="1" value="0" />
+                  <small>화면 크기 대비 %. 옮겨도 선은 출발 지점에서 박스 모서리로 자연스럽게 이어집니다.</small>
+                </label>
               </div></div>
             </details>
             <details class="grp">
@@ -162,6 +169,13 @@
                 </label>
                 <label class="zoomrow">정보박스 크기 <output id="destBoxSizeOut">100%</output>
                   <input id="destBoxSize" type="range" min="40" max="250" step="1" value="100" />
+                </label>
+                <label class="zoomrow">정보박스 좌 ↔ 우 <output id="destBoxXOut">0</output>
+                  <input id="destBoxX" type="range" min="-50" max="50" step="1" value="0" />
+                </label>
+                <label class="zoomrow">정보박스 위 ↕ 아래 <output id="destBoxYOut">0</output>
+                  <input id="destBoxY" type="range" min="-50" max="50" step="1" value="0" />
+                  <small>화면 크기 대비 %. 옮겨도 선은 도착 지점에서 박스 모서리로 자연스럽게 이어집니다.</small>
                 </label>
               </div></div>
             </details>
@@ -228,6 +242,12 @@
                 <label class="zoomrow">도시 불빛 세기 <output id="cityLightsOut">100%</output>
                   <input id="cityLights" type="range" min="0" max="200" step="5" value="100" />
                   <small>황혼·야간에서 어두운 쪽 땅에 도시 불빛이 켜집니다. 공항 주변 고해상도 타일 구간은 위성사진 그대로 어둡게 보입니다.</small>
+                </label>
+              </div></div>
+              <div class="sg"><div class="sg-title">선택 국가 강조</div><div class="sg-body">
+                <label class="check"><input type="checkbox" id="optHighlight" checked /> 출발·도착 국가를 밝게, 국경 안쪽에 음영</label>
+                <label class="zoomrow">강조 세기 <output id="highlightAmtOut">100%</output>
+                  <input id="highlightAmt" type="range" min="0" max="200" step="5" value="100" />
                 </label>
               </div></div>
               <div class="sg"><div class="sg-title">구름 · 대기 · 별</div><div class="sg-body">
