@@ -45,6 +45,14 @@ const stage = $('stage'), glCanvas = $('gl'), hudCanvas = $('hud');
 
 // ── 데이터/UI 구성 ───────────────────────────────────────────────────
 function airlineOf() { return AIRLINES.find((a) => a.id === state.airline); }
+/** 지도에서 밝게 강조할 국가: 출발국 + (국가를 골랐으면 그 국가, 아니면 선택한 권역 전체). 선택 즉시 반영 */
+function updateHighlight() {
+  if (!scene || !data) return;
+  const codes = [originOf().country];
+  if (state.countryId) codes.push(state.countryId);
+  else if (state.regionId) codes.push(...data.regions.find((r) => r.id === state.regionId).countries.map((c) => c.code));
+  scene.setHighlightCodes(codes);
+}
 function originOf() { return data.origins.find((a) => a.id === state.originId); }
 function destOf() { return data.destinations.find((a) => a.id === state.destId); }
 
@@ -100,6 +108,7 @@ function buildRegions() {
       state.countryId = null;
       $('search').value = '';
       buildRegions(); buildCountries(); buildDestinations(); updateStepLocks();
+      updateHighlight();
     };
     box.appendChild(b);
   }
@@ -130,6 +139,7 @@ function buildCountries() {
     $('search').value = '';
     buildDestinations();
     updateStepLocks();
+    updateHighlight();
   };
 }
 
@@ -248,6 +258,7 @@ function applyFlight() {
   scene.setOptions({ wideStart: state.regionId === 'southeast-asia', duration: state.duration });
   updateSummaries?.();
   scene.setFlight({ origin: o, dest: d, livery: a, routeColor: a.route });
+  updateHighlight();
   const badge = $('tilesBadge');
   badge.hidden = !$('optHd').checked;
   badge.textContent = '고해상도 위성 타일 불러오는 중…';

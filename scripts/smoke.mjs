@@ -32,6 +32,7 @@ const browser = await chromium.launch({
 });
 const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
 const errs = [];
+page.setDefaultTimeout(90000); // 소프트웨어 렌더링에서는 프레임이 느려 클릭 안정화 대기가 길어질 수 있다
 page.on('pageerror', (e) => errs.push(e.message));
 page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errs.push(m.text().slice(0, 200)); });
 // 외부 서비스(위성 타일)는 막아 오프라인 동작을 함께 확인한다

@@ -126,7 +126,7 @@ export class GlobeScene {
         this.cloudMat.map = clouds;
         this.cloudMat.needsUpdate = true;
         this.geo = geo;
-        if (this.flight) this.#buildSelectionMask([...new Set([this.flight.origin.country, this.flight.dest.country])]);
+        if (this.selCodes) this.#buildSelectionMask(this.selCodes);
         this.#buildBorders(geo);
       });
 
@@ -202,6 +202,12 @@ float mmNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
     m.userData.basePx = opts.linewidth;
     this.lineMats.push(m);
     return m;
+  }
+
+  /** 강조할 국가 코드 목록(출발국 + 선택한 권역의 국가들 또는 선택한 도착 국가). 바로 반영된다 */
+  setHighlightCodes(codes) {
+    this.selCodes = [...new Set(codes)];
+    this.#buildSelectionMask(this.selCodes);
   }
 
   /** 선택 국가 강조 셰이더 조각을 지구·위성 패치 머티리얼에 주입한다 */
@@ -286,7 +292,7 @@ float mmNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
     this.borders = new LineSegments2(g, this.borderMat);
     this.borders.frustumCulled = false;
     this.scene.add(this.borders);
-    this.borderSelMat = this.#lineMat({ color: 0xffffff, linewidth: 2.0, opacity: 0.95 });
+    this.borderSelMat = this.#lineMat({ color: 0xffffff, linewidth: 1.35, opacity: 0.95 });
   }
 
   /** 선택(출발·도착) 국가의 국경선만 따로 굵고 선명하게 */
@@ -313,7 +319,6 @@ float mmNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
   /** 비행 구성 변경 시 호출 */
   setFlight({ origin, dest, livery, routeColor }) {
     this.flight = { origin, dest, livery, routeColor };
-    this.#buildSelectionMask([...new Set([origin.country, dest.country])]);
     this.dynamic.clear();
     this.lineMats = this.lineMats.filter((m) => m === this.borderMat || m === this.borderSelMat);
 
