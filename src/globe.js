@@ -319,6 +319,7 @@ float mmNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
   /** 비행 구성 변경 시 호출 */
   setFlight({ origin, dest, livery, routeColor }) {
     this.flight = { origin, dest, livery, routeColor };
+    this.distCache = null;
     this.dynamic.clear();
     this.lineMats = this.lineMats.filter((m) => m === this.borderMat || m === this.borderSelMat);
 
@@ -537,7 +538,66 @@ float mmNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
     return points.map((v) => v.clone().project(cam));
   }
 
+  /**
+   * 카메라 거리 곡선: 줌인이 '줌인 → 줌아웃 → 다시 줌인'으로 출렁이지 않고 도착 지점까지 한 방향으로 서서히 이어지게 한다.
+   *  1) 장면마다 필요한 거리(원래 계산값, 기체·도착지·UI가 화면에 들어오는 최소 거리)를 시간축으로 촘촘히 샘플링
+   *  2) 로그 거리의 '위쪽 오목 포락선'(upper concave hull)을 잡는다 → 항상 원래 값 이상이라 화면 밖으로 잘리지 않고,
+   *     줌인 속도가 줄었다 늘었다 하지 않고 점점 일정하게 빨라지는 한 방향 곡선이 된다
+   *  3) 과거 방향 가우시안으로 부드럽게 만든다(과거 값은 항상 더 크므로 여전히 원래 값 이상) → 속도 꺾임이 사라진다
+   *  4) 마지막 15%는 포락선 값으로 수렴시켜, 도착 거리(도착 확대 설정)에 정확히 도달한다
+   */
+  #distCurve(aspect) {
+    const o = this.options;
+    const key = [this.flight?.origin.lat, this.flight?.origin.lon, this.flight?.dest.lat, this.flight?.dest.lon, aspect.toFixed(3),
+      o.mapZoom, o.mapRotate, o.mapTilt, o.panX, o.panY, o.endZoom, o.endRotate, o.endTilt, o.endPanX, o.endPanY, o.globeIntro, o.wideStart, o.startView].join('|');
+    if (this.distCache?.key === key) return this.distCache.fn;
+    const N = 200;
+    const L = new Float64Array(N + 1);
+    for (let i = 0; i <= N; i++) L[i] = Math.log(this.#cameraRaw(i / N, aspect, null).dist);
+    // 뒤에서부터 최댓값 → 시간에 따라 줄어들기만 하는 상한선
+    const E = new Float64Array(N + 1);
+    let m = -Infinity;
+    for (let i = N; i >= 0; i--) { m = Math.max(m, L[i]); E[i] = m; }
+    // 위쪽 오목 포락선 (단조 체인)
+    const hull = [];
+    for (let i = 0; i <= N; i++) {
+      while (hull.length >= 2) {
+        const a = hull[hull.length - 2], b = hull[hull.length - 1];
+        if ((E[b] - E[a]) * (i - a) <= (E[i] - E[a]) * (b - a)) hull.pop(); else break;
+      }
+      hull.push(i);
+    }
+    const H = new Float64Array(N + 1);
+    for (let k = 0; k < hull.length - 1; k++) {
+      const a = hull[k], b = hull[k + 1];
+      for (let i = a; i <= b; i++) H[i] = E[a] + ((E[b] - E[a]) * (i - a)) / (b - a);
+    }
+    // 과거 방향 가우시안 평활 (폭 약 20%)
+    const K = Math.round(N * 0.2), sig = K / 2.2;
+    const w = Array.from({ length: K + 1 }, (_, k) => Math.exp(-(k * k) / (2 * sig * sig)));
+    const wsum = w.reduce((x, y) => x + y, 0);
+    const F = new Float64Array(N + 1);
+    for (let i = 0; i <= N; i++) {
+      let acc = 0;
+      for (let k = 0; k <= K; k++) acc += w[k] * H[Math.max(0, i - k)];
+      const smoothed = acc / wsum;
+      const blend = smooth((i / N - 0.85) / 0.15); // 끝에서는 도착 거리에 정확히 수렴
+      F[i] = lerp(smoothed, H[i], blend);
+    }
+    const fn = (t) => {
+      const x = clamp(t, 0, 1) * N, i = Math.min(N - 1, Math.floor(x)), k = x - i;
+      return Math.exp(lerp(F[i], F[i + 1], k));
+    };
+    this.distCache = { key, fn, F, L };
+    return fn;
+  }
+
   #cameraState(t, aspect) {
+    return this.#cameraRaw(t, aspect, this.#distCurve(aspect)(t));
+  }
+
+  /** fixedDist가 없으면 장면 구성에서 계산한 거리를 쓴다 (곡선 생성용). 있으면 그 거리로 중심·보정을 계산 */
+  #cameraRaw(t, aspect, fixedDist) {
     const { intro } = TIMELINE;
     const s = this.flightProgress(t);
     const p = clamp((t - this.#flyStart()) / (this.#flyEnd() - this.#flyStart()), 0, 1);
@@ -606,7 +666,7 @@ float mmNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
     const zoomEff = lerp(this.options.mapZoom, this.options.endZoom, zs);
     const reqDist = (Math.max((exR * margin) / (TAN_HALF * aspect), (eyR * margin) / TAN_HALF) / zoomEff) * 0.95;
     const N = 10; // 소프트 맥스: 두 값이 교차해도 꺾이지 않는다
-    let dist = Math.pow(Math.pow(easeDist, N) + Math.pow(reqDist, N), 1 / N);
+    let dist = fixedDist ?? Math.pow(Math.pow(easeDist, N) + Math.pow(reqDist, N), 1 / N);
     {
       // 드래그로 옮긴 지도 위치(화면 높이 단위): 시작 설정 → 도착 설정으로 보간
       const px = lerp(this.options.panX, this.options.endPanX, zs), py = lerp(this.options.panY, this.options.endPanY, zs);
@@ -663,6 +723,9 @@ float mmNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
     }
     return { C, dist, tilt, psi, z, p, s };
   }
+
+  /** 렌더 없이 카메라 상태만 계산 (점검·튜닝용) */
+  cameraAt(t) { return this.#cameraState(t, this.size.w / this.size.h); }
 
   /** t(0~1)에 해당하는 장면을 렌더하고 HUD용 투영 정보를 반환 */
   renderAt(t, seconds = 0) {
