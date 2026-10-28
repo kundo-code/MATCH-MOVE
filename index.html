@@ -142,11 +142,11 @@
                 <label class="check"><input type="checkbox" id="optOriginBox" checked /> 정보박스 (공항명·국가)</label>
               </div></div>
               <div class="sg"><div class="sg-title">크기</div><div class="sg-body">
-                <label class="zoomrow">타겟 크기 <output id="originTargetSizeOut">55%</output>
-                  <input id="originTargetSize" type="range" min="40" max="250" step="1" value="55" />
+                <label class="zoomrow">타겟 크기 <output id="originTargetSizeOut">85%</output>
+                  <input id="originTargetSize" type="range" min="40" max="250" step="1" value="85" />
                 </label>
-                <label class="zoomrow">정보박스 크기 <output id="originBoxSizeOut">70%</output>
-                  <input id="originBoxSize" type="range" min="40" max="250" step="1" value="70" />
+                <label class="zoomrow">정보박스 크기 <output id="originBoxSizeOut">100%</output>
+                  <input id="originBoxSize" type="range" min="40" max="250" step="1" value="100" />
                 </label>
                 <label class="zoomrow">정보박스 좌 ↔ 우 <output id="originBoxXOut">0</output>
                   <input id="originBoxX" type="range" min="-50" max="50" step="1" value="0" />
@@ -164,11 +164,11 @@
                 <label class="check"><input type="checkbox" id="optDestBox" checked /> 정보박스 (공항명·국가)</label>
               </div></div>
               <div class="sg"><div class="sg-title">크기</div><div class="sg-body">
-                <label class="zoomrow">타겟 크기 <output id="destTargetSizeOut">50%</output>
-                  <input id="destTargetSize" type="range" min="40" max="250" step="1" value="50" />
+                <label class="zoomrow">타겟 크기 <output id="destTargetSizeOut">120%</output>
+                  <input id="destTargetSize" type="range" min="40" max="250" step="1" value="120" />
                 </label>
-                <label class="zoomrow">정보박스 크기 <output id="destBoxSizeOut">100%</output>
-                  <input id="destBoxSize" type="range" min="40" max="250" step="1" value="100" />
+                <label class="zoomrow">정보박스 크기 <output id="destBoxSizeOut">125%</output>
+                  <input id="destBoxSize" type="range" min="40" max="250" step="1" value="125" />
                 </label>
                 <label class="zoomrow">정보박스 좌 ↔ 우 <output id="destBoxXOut">0</output>
                   <input id="destBoxX" type="range" min="-50" max="50" step="1" value="0" />
@@ -186,11 +186,11 @@
                 <label class="check"><input type="checkbox" id="optAirlineLogo" checked /> 항공사 로고 마크 표시</label>
               </div></div>
               <div class="sg"><div class="sg-title">크기</div><div class="sg-body">
-                <label class="zoomrow">박스 크기 <output id="topBoxSizeOut">80%</output>
-                  <input id="topBoxSize" type="range" min="40" max="250" step="1" value="80" />
+                <label class="zoomrow">박스 크기 <output id="topBoxSizeOut">90%</output>
+                  <input id="topBoxSize" type="range" min="40" max="250" step="1" value="90" />
                 </label>
-                <label class="zoomrow">글자 크기 <output id="topFontSizeOut">70%</output>
-                  <input id="topFontSize" type="range" min="50" max="250" step="1" value="70" />
+                <label class="zoomrow">글자 크기 <output id="topFontSizeOut">80%</output>
+                  <input id="topFontSize" type="range" min="50" max="250" step="1" value="80" />
                 </label>
               </div></div>
             </details>
@@ -201,27 +201,27 @@
               </div></div>
               <div class="sg"><div class="sg-title">위치</div><div class="sg-body">
                 <div class="posgrid" id="cardPos" role="radiogroup" aria-label="비행거리 / 왕복이동시간 카드 위치">
-                  <button type="button" data-pos="tl" aria-pressed="false">↖ 좌측 상단</button>
+                  <button type="button" data-pos="tl" aria-pressed="true">↖ 좌측 상단</button>
                   <button type="button" data-pos="tr" aria-pressed="false">우측 상단 ↗</button>
-                  <button type="button" data-pos="bl" aria-pressed="true">↙ 좌측 하단</button>
+                  <button type="button" data-pos="bl" aria-pressed="false">↙ 좌측 하단</button>
                   <button type="button" data-pos="br" aria-pressed="false">우측 하단 ↘</button>
                 </div>
                 <small class="hint2">우측 상단은 항공사 박스 바로 아래에 놓입니다.</small>
               </div></div>
               <div class="sg"><div class="sg-title">크기</div><div class="sg-body">
-                <label class="zoomrow">박스 크기 <output id="cardBoxSizeOut">100%</output>
-                  <input id="cardBoxSize" type="range" min="40" max="250" step="1" value="100" />
+                <label class="zoomrow">박스 크기 <output id="cardBoxSizeOut">120%</output>
+                  <input id="cardBoxSize" type="range" min="40" max="250" step="1" value="120" />
                 </label>
-                <label class="zoomrow">글자 크기 <output id="cardFontSizeOut">70%</output>
-                  <input id="cardFontSize" type="range" min="50" max="250" step="1" value="70" />
+                <label class="zoomrow">글자 크기 <output id="cardFontSizeOut">80%</output>
+                  <input id="cardFontSize" type="range" min="50" max="250" step="1" value="80" />
                 </label>
               </div></div>
             </details>
             <details class="grp">
               <summary><i class="dot ic">✈</i>비행기<span class="sum" id="sumPlane"></span></summary>
               <div class="sg"><div class="sg-title">크기</div><div class="sg-body">
-                <label class="zoomrow">기체 크기 <output id="planeSizeOut">100%</output>
-                  <input id="planeSize" type="range" min="50" max="300" step="1" value="100" />
+                <label class="zoomrow">기체 크기 <output id="planeSizeOut">120%</output>
+                  <input id="planeSize" type="range" min="50" max="300" step="1" value="120" />
                   <small>멀리 축소된 장면에서도 일정한 비율로 보입니다.</small>
                 </label>
               </div></div>
@@ -281,7 +281,11 @@
               </div></div>
               <div class="sg"><div class="sg-title">레이어</div><div class="sg-body">
                 <label class="check"><input type="checkbox" id="optBorders" checked /> 국경선 (GeoJSON)</label>
+                <label class="check"><input type="checkbox" id="optRegionLines" /> 지역 구분선 <small>(시·도·성 경계, 가까이 볼 때 은은하게)</small></label>
                 <label class="check"><input type="checkbox" id="optCountries" checked /> 국가명 라벨</label>
+                <label class="zoomrow">국가명 글자 크기 <output id="countryFontOut">100%</output>
+                  <input id="countryFont" type="range" min="50" max="220" step="5" value="100" />
+                </label>
                 <label class="check"><input type="checkbox" id="optClouds" checked /> 구름</label>
                 <label class="check"><input type="checkbox" id="optHd" checked /> 공항 주변 고해상도 위성 타일 <small>(Esri, 온라인)</small></label>
               </div></div>
@@ -366,8 +370,8 @@
               <div class="sg-title">비행 사운드</div>
               <div class="sg-body">
                 <label class="check"><input type="checkbox" id="optSound" checked /> 이륙·상승·순항·착륙 엔진음</label>
-                <label class="zoomrow">엔진음 크기 <output id="engVolOut">100%</output>
-                  <input id="engVol" type="range" min="0" max="150" step="1" value="100" />
+                <label class="zoomrow">엔진음 크기 <output id="engVolOut">70%</output>
+                  <input id="engVol" type="range" min="0" max="150" step="1" value="70" />
                 </label>
               </div>
             </div>
@@ -389,8 +393,8 @@
               <div class="sg-title">내레이션</div>
               <div class="sg-body">
                 <div class="filerow"><label class="filebtn">음성 파일 선택<input id="narrFile" type="file" accept="audio/*,.mp3,.m4a,.wav,.aac,.ogg" hidden /></label><button id="narrRec" class="mini" type="button">● 녹음</button><span id="narrName" class="fname">선택 안 됨</span><button id="narrClear" class="link" type="button" hidden>삭제</button></div>
-                <label class="zoomrow">내레이션 크기 <output id="narrVolOut">100%</output>
-                  <input id="narrVol" type="range" min="0" max="150" step="1" value="100" />
+                <label class="zoomrow">내레이션 크기 <output id="narrVolOut">50%</output>
+                  <input id="narrVol" type="range" min="0" max="150" step="1" value="50" />
                 </label>
                 <label class="zoomrow">시작 시간 <output id="narrStartOut">0초</output>
                   <input id="narrStart" type="range" min="0" max="30" step="0.1" value="0" />

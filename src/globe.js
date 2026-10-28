@@ -61,7 +61,7 @@ export class GlobeScene {
     this.maxAniso = this.renderer.capabilities.getMaxAnisotropy();
     this.flight = null;
     this.patches = new Map();
-    this.options = { borders: true, clouds: true, hdTiles: true, countryLabels: true, originTarget: true, destTarget: true, originTargetScale: 0.55, destTargetScale: 0.5, cardShown: true, cardPos: 'bl', mapZoom: 1, mapRotate: 0, mapTilt: 38, panX: 0, panY: 0, planeSize: 1, globeIntro: false, endZoom: 1, endRotate: 0, endTilt: 52, endPanX: 0, endPanY: 0, depth: 0.7, planeShadow: true, timeOfDay: 'studio', cityLights: 1, cloudAmt: 0.5, cloudSpeed: 1, atmoAmt: 1, starAmt: 0.8, highlight: true, highlightAmt: 1, duration: 8, wideStart: false, startView: 'auto' };
+    this.options = { borders: true, clouds: true, hdTiles: true, countryLabels: true, originTarget: true, destTarget: true, originTargetScale: 0.55, destTargetScale: 0.5, cardShown: true, cardPos: 'bl', mapZoom: 1, mapRotate: 0, mapTilt: 38, panX: 0, panY: 0, planeSize: 1, globeIntro: false, endZoom: 1, endRotate: 0, endTilt: 52, endPanX: 0, endPanY: 0, depth: 0.7, planeShadow: true, timeOfDay: 'studio', cityLights: 1, cloudAmt: 0.5, cloudSpeed: 1, atmoAmt: 1, starAmt: 0.8, highlight: true, highlightAmt: 1, regionLines: false, duration: 8, wideStart: false, startView: 'auto' };
     this.size = { w: 1280, h: 720 };
     this.tmpCam = new THREE.PerspectiveCamera(VFOV, 16 / 9, 0.001, 100);
     // 기체에 금속 반사·하이라이트를 주는 환경 맵 (스튜디오 조명)
@@ -112,8 +112,9 @@ export class GlobeScene {
     const { scene } = this;
     const loader = new THREE.TextureLoader();
     const load = (url) => new Promise((res, rej) => loader.load(url, res, undefined, rej));
-    this.ready = Promise.all([load('textures/earth.jpg'), load('textures/clouds.png'), fetch('data/countries.geojson').then((r) => r.json()), load('textures/topology.png'), load('textures/water.png'), load('textures/night.png').catch(() => null)])
-      .then(([earth, clouds, geo, topo, water, night]) => {
+    this.ready = Promise.all([load('textures/earth.jpg'), load('textures/clouds.png'), fetch('data/countries.geojson').then((r) => r.json()), load('textures/topology.png'), load('textures/water.png'), load('textures/night.png').catch(() => null), fetch('data/regions.json').then((r) => (r.ok ? r.json() : null)).catch(() => null)])
+      .then(([earth, clouds, geo, topo, water, night, regions]) => {
+        this.regionLinesData = regions;
         earth.colorSpace = THREE.SRGBColorSpace;
         earth.anisotropy = this.maxAniso;
         clouds.colorSpace = THREE.SRGBColorSpace;
@@ -275,24 +276,91 @@ float mmNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
     for (const t of old) if (t && t.image && t.image.width > 1) t.dispose();
   }
 
+  /**
+   * 선분 좌표(x1 y1 z1 x2 y2 z2 …)를 약 20°×20° 구역으로 나눠 구역별 LineSegments2로 만든다.
+   * 전 세계 국경선(약 10만 선분)을 한 덩어리로 그리면 선 하나가 삼각형 여러 개라 GPU 부담이 커서 장면이 끊기므로,
+   * 화면에 보이는 구역만 그리도록(#cullChunks) 쪼갠다.
+   */
+  #makeLineChunks(pos, mat, renderOrder = 0) {
+    const cell = (x, y, z) => {
+      const lon = Math.atan2(-z, x) / D2R, lat = Math.asin(clamp(y, -1, 1)) / D2R;
+      return `${Math.floor((lon + 180) / 20)}_${Math.floor((lat + 90) / 20)}`;
+    };
+    const buckets = new Map();
+    for (let i = 0; i < pos.length; i += 6) {
+      const k = cell((pos[i] + pos[i + 3]) / 2, (pos[i + 1] + pos[i + 4]) / 2, (pos[i + 2] + pos[i + 5]) / 2);
+      if (!buckets.has(k)) buckets.set(k, []);
+      buckets.get(k).push(pos[i], pos[i + 1], pos[i + 2], pos[i + 3], pos[i + 4], pos[i + 5]);
+    }
+    const chunks = [];
+    for (const arr of buckets.values()) {
+      const g = new LineSegmentsGeometry();
+      g.setPositions(arr);
+      g.computeBoundingSphere();
+      const mesh = new LineSegments2(g, mat);
+      mesh.renderOrder = renderOrder;
+      mesh.frustumCulled = false; // 구역 가시성은 #cullChunks에서 직접 판단
+      const c = g.boundingSphere.center.clone();
+      const len = c.length() || 1;
+      // 구역 중심 방향과 각 반경(라디안): 구면 위 선분들이 퍼진 정도
+      const dir = c.clone().divideScalar(len);
+      let r = 0;
+      for (let i = 0; i < arr.length; i += 3) r = Math.max(r, Math.acos(clamp(dir.x * arr[i] / Math.hypot(arr[i], arr[i + 1], arr[i + 2]) + dir.y * arr[i + 1] / Math.hypot(arr[i], arr[i + 1], arr[i + 2]) + dir.z * arr[i + 2] / Math.hypot(arr[i], arr[i + 1], arr[i + 2]), -1, 1)));
+      this.scene.add(mesh);
+      chunks.push({ mesh, dir, r });
+    }
+    return chunks;
+  }
+
+  /** 카메라에서 수평선 너머(지구 뒤편)이거나 시야각 밖인 구역은 그리지 않는다 */
+  #cullChunks(chunks, on, camPos, cam) {
+    if (!chunks) return;
+    const d = camPos.length(), camDir = camPos.clone().divideScalar(d);
+    const horizon = Math.acos(clamp(1 / d, -1, 1));
+    const half = Math.atan(TAN_HALF * Math.max(1, cam.aspect)) + 0.12; // 시야 반각(+여유)
+    const look = this.camLookDir || camDir;
+    for (const { mesh, dir, r } of chunks) {
+      const ang = Math.acos(clamp(dir.dot(camDir), -1, 1));
+      let vis = on && ang - r < horizon;
+      if (vis && d < 1.6) { // 가까이서는 화면 방향 밖의 구역도 걸러낸다
+        const toChunk = dir.clone().multiplyScalar(1).sub(camPos).normalize();
+        vis = Math.acos(clamp(toChunk.dot(look), -1, 1)) < half + r * 1.5 + 0.1;
+      }
+      mesh.visible = vis;
+    }
+  }
+
   #buildBorders(geo) {
     const pos = [];
     const addRing = (ring) => {
-      for (let i = 0; i < ring.length - 1; i++) {
-        pos.push(...latLonToVec(ring[i][1], ring[i][0], 1.0004), ...latLonToVec(ring[i + 1][1], ring[i + 1][0], 1.0004));
+      let last = ring[0];
+      for (let i = 1; i < ring.length; i++) {
+        const p = ring[i];
+        // 0.02° 미만의 아주 짧은 구간은 건너뛰어 선분 수를 줄인다 (고리의 끝점은 유지)
+        if (i < ring.length - 1 && Math.abs(p[0] - last[0]) + Math.abs(p[1] - last[1]) < 0.02) continue;
+        pos.push(...latLonToVec(last[1], last[0], 1.0004), ...latLonToVec(p[1], p[0], 1.0004));
+        last = p;
       }
     };
     for (const f of geo.features) {
       const polys = f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates;
       for (const poly of polys) for (const ring of poly) addRing(ring);
     }
-    const g = new LineSegmentsGeometry();
-    g.setPositions(pos);
     this.borderMat = this.#lineMat({ color: 0xffffff, linewidth: 1.1, opacity: 0.5 });
-    this.borders = new LineSegments2(g, this.borderMat);
-    this.borders.frustumCulled = false;
-    this.scene.add(this.borders);
+    this.borderChunks = this.#makeLineChunks(pos, this.borderMat);
     this.borderSelMat = this.#lineMat({ color: 0xffffff, linewidth: 1.35, opacity: 0.95 });
+    this.regionMat = this.#lineMat({ color: 0xd7e6ff, linewidth: 0.9, opacity: 0.3 });
+    if (this.regionLinesData) this.#buildRegionLines();
+  }
+
+  /** 지역(시·도·성) 구분선 — public/data/regions.json (npm run data:regions) */
+  #buildRegionLines() {
+    if (!this.regionLinesData || !this.regionMat || this.regionChunks) return;
+    const pos = [];
+    for (const flat of this.regionLinesData) {
+      for (let i = 0; i + 3 < flat.length; i += 2) pos.push(...latLonToVec(flat[i + 1], flat[i], 1.0004), ...latLonToVec(flat[i + 3], flat[i + 2], 1.0004));
+    }
+    this.regionChunks = this.#makeLineChunks(pos, this.regionMat, 1);
   }
 
   /** 선택(출발·도착) 국가의 국경선만 따로 굵고 선명하게 */
@@ -306,14 +374,8 @@ float mmNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
         for (let i = 0; i < ring.length - 1; i++) pos.push(...latLonToVec(ring[i][1], ring[i][0], 1.0005), ...latLonToVec(ring[i + 1][1], ring[i + 1][0], 1.0005));
       }
     }
-    if (this.bordersSel) { this.scene.remove(this.bordersSel); this.bordersSel.geometry.dispose(); }
-    if (!pos.length) { this.bordersSel = null; return; }
-    const g = new LineSegmentsGeometry();
-    g.setPositions(pos);
-    this.bordersSel = new LineSegments2(g, this.borderSelMat);
-    this.bordersSel.frustumCulled = false;
-    this.bordersSel.renderOrder = 2;
-    this.scene.add(this.bordersSel);
+    for (const c of this.selBorderChunks || []) { this.scene.remove(c.mesh); c.mesh.geometry.dispose(); }
+    this.selBorderChunks = pos.length ? this.#makeLineChunks(pos, this.borderSelMat, 2) : [];
   }
 
   /** 비행 구성 변경 시 호출 */
@@ -321,7 +383,7 @@ float mmNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
     this.flight = { origin, dest, livery, routeColor };
     this.distCache = null;
     this.dynamic.clear();
-    this.lineMats = this.lineMats.filter((m) => m === this.borderMat || m === this.borderSelMat);
+    this.lineMats = this.lineMats.filter((m) => m === this.borderMat || m === this.borderSelMat || m === this.regionMat);
 
     const A = latLonToVec(origin.lat, origin.lon), B = latLonToVec(dest.lat, dest.lon);
     this.A = v3(A); this.B = v3(B);
@@ -452,11 +514,20 @@ float mmNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
     Object.assign(this.options, o);
   }
 
+  /** 미리보기 렌더 해상도 배율(0.5~1). 논리 좌표(HUD 투영)는 그대로 두고 그려지는 픽셀 수만 줄여 끊김을 막는다 */
+  setRenderScale(s) {
+    s = clamp(s, 0.4, 1);
+    if (s === (this.renderScale ?? 1)) return;
+    this.renderScale = s;
+    this.renderer.setPixelRatio(s);
+    this.renderer.setSize(this.size.w, this.size.h, false);
+  }
+
   resize(w, h) {
     if (this.size.w === w && this.size.h === h && this.camera.aspect === w / h && this.sized) return;
     this.sized = true;
     this.size = { w, h };
-    this.renderer.setPixelRatio(1);
+    this.renderer.setPixelRatio(this.renderScale ?? 1);
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
@@ -807,8 +878,12 @@ float mmNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
     this.cloudMat.opacity = this.options.cloudAmt * smooth((height - 0.06) / 0.35);
     this.clouds.visible = this.options.clouds && height > 0.06;
     this.clouds.rotation.y = seconds * 0.004 * this.options.cloudSpeed;
-    if (this.borders) this.borders.visible = this.options.borders;
-    if (this.bordersSel) this.bordersSel.visible = this.options.borders && this.options.highlight;
+    // 구역별 국경선: 보이는 구역만 그린다
+    this.camLookDir = cam.getWorldDirection(this.tmpLook || (this.tmpLook = new THREE.Vector3()));
+    if (this.regionMat) this.regionMat.opacity = 0.34 * (1 - smooth((height - 0.5) / 1.0));
+    this.#cullChunks(this.borderChunks, this.options.borders, cam.position, cam);
+    this.#cullChunks(this.selBorderChunks, this.options.borders && this.options.highlight, cam.position, cam);
+    this.#cullChunks(this.regionChunks, this.options.regionLines, cam.position, cam);
     if (this.patchGroup) this.patchGroup.visible = this.options.hdTiles;
 
     const scale = h / 1080;

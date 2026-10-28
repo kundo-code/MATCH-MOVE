@@ -24,8 +24,9 @@ const state = {
   destId: DEFAULT_DEST,
   duration: 8,
   playing: true,
+  adaptive: true, // 미리보기 해상도 자동 조절
   t: 0,
-  cardPos: 'bl', // 비행거리 / 왕복이동시간 카드 위치: tl · tr · bl · br
+  cardPos: 'tl', // 비행거리 / 왕복이동시간 카드 위치: tl · tr · bl · br
   exporting: false,
 };
 
@@ -224,6 +225,7 @@ function flightMeta() {
     showCountryLabels: $('optCountries').checked,
     showCard: $('optCard').checked,
     cardPos: state.cardPos,
+    countryFontScale: +$('countryFont').value / 100,
     showOriginTarget: $('optOriginTarget').checked,
     showDestTarget: $('optDestTarget').checked,
     showTop: $('optTop').checked,
@@ -295,10 +297,23 @@ function renderPreview() {
 const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 let last = performance.now();
+// 재생이 끊기지 않도록 프레임 시간을 보고 미리보기 렌더 해상도를 자동으로 조절한다 (저장 결과 화질에는 영향 없음)
+const perf = { ema: 0, n: 0, scale: 1 };
+function adaptRenderScale(dt) {
+  if (!state.playing || state.adaptive === false || document.hidden) { perf.ema = 0; perf.n = 0; return; }
+  perf.ema = perf.ema ? perf.ema * 0.92 + dt * 0.08 : dt;
+  if (++perf.n % 20) return;
+  // 평균 프레임 시간이 24ms(약 42fps)보다 길면 낮추고, 여유가 생기면(≤17.5ms) 다시 올린다
+  if (perf.ema > 0.024 && perf.scale > 0.55) perf.scale = Math.max(0.55, perf.scale - 0.1);
+  else if (perf.ema < 0.0175 && perf.scale < 1) perf.scale = Math.min(1, perf.scale + 0.05);
+  scene.setRenderScale(perf.scale);
+}
 function loop(now) {
-  const dt = (now - last) / 1000;
+  const dt = Math.min((now - last) / 1000, 0.05); // 한 프레임이 길어져도 애니메이션이 튀지 않게
+  const rawDt = (now - last) / 1000;
   last = now;
   if (!state.exporting) {
+    adaptRenderScale(rawDt);
     stepView(dt);
     audioTick();
     if (state.playing) {
@@ -327,6 +342,7 @@ function makeComposer(W, H) {
   ctx.imageSmoothingQuality = 'high';
   const cfg = storyCfg(); // 저장 중에는 설정을 한 번만 읽는다
   return (t, seconds) => {
+    scene.setRenderScale(1); // 저장은 항상 전체 해상도
     scene.resize(Math.round(W * ss), Math.round(H * ss));
     const info = scene.renderAt(Math.min(t, 1), seconds);
     ctx.drawImage(glCanvas, 0, 0, W, H);
@@ -497,7 +513,7 @@ function audioTick() {
   const sec = state.t * state.duration;
   if (!audio.src) { startAudioAt(sec); return; }
   const pos = audio.startOffset + (audio.ctx.currentTime - audio.startedAt);
-  if (audio.srcKey !== audioKey() || Math.abs(pos - sec) > 0.25) startAudioAt(sec);
+  if (audio.srcKey !== audioKey() || Math.abs(pos - sec) > 0.4) startAudioAt(sec);
 }
 
 /** 배경음악·내레이션 파일/녹음 UI */
@@ -861,7 +877,7 @@ function wirePointOptions() {
     $(id).oninput = (e) => { $(`${id}Out`).textContent = e.target.value; refresh(); };
   }
   // 기본 크기값(HTML 슬라이더 값)을 씬에 반영
-  scene.setOptions({ originTargetScale: +$('originTargetSize').value / 100, destTargetScale: +$('destTargetSize').value / 100 });
+  scene.setOptions({ originTargetScale: +$('originTargetSize').value / 100, destTargetScale: +$('destTargetSize').value / 100, planeSize: +$('planeSize').value / 100, cardPos: state.cardPos });
   $('planeSize').oninput = (e) => {
     $('planeSizeOut').textContent = `${e.target.value}%`;
     scene.setOptions({ planeSize: +e.target.value / 100 });
@@ -902,6 +918,8 @@ async function init() {
   $('optBorders').onchange = (e) => scene.setOptions({ borders: e.target.checked });
   $('optClouds').onchange = (e) => scene.setOptions({ clouds: e.target.checked });
   $('optCountries').onchange = (e) => { scene.setOptions({ countryLabels: e.target.checked }); refreshMeta(); };
+  $('optRegionLines').onchange = (e) => scene.setOptions({ regionLines: e.target.checked });
+  $('countryFont').oninput = (e) => { $('countryFontOut').textContent = `${e.target.value}%`; refreshMeta(); };
   $('optHd').onchange = (e) => { scene.setOptions({ hdTiles: e.target.checked }); refreshMeta(); };
   $('duration').oninput = (e) => { state.duration = +e.target.value; scene.setOptions({ duration: state.duration }); $('durationOut').textContent = `${state.duration}초`; updateBitrateHint(); };
   $('targetMB').oninput = $('fps').onchange = updateBitrateHint;

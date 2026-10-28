@@ -9,7 +9,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "data": "node scripts/build-data.mjs",
-    "test": "node scripts/smoke.mjs"
+    "test": "node scripts/smoke.mjs",
+    "data:regions": "node scripts/build-regions.mjs"
   },
   "dependencies": {
     "mp4-muxer": "^5.2.2",

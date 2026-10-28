@@ -44,7 +44,21 @@ function fit(ctx, str, maxW) {
   return str + '…';
 }
 
-function countryLabels(ctx, info, u, route) {
+let vignetteCache = null;
+function vignetteFor(w, h) {
+  if (vignetteCache && vignetteCache.width === w && vignetteCache.height === h) return vignetteCache;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const x = c.getContext('2d');
+  const vg = x.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.45, w / 2, h / 2, Math.hypot(w, h) * 0.62);
+  vg.addColorStop(0, 'rgba(0,0,0,0)');
+  vg.addColorStop(1, 'rgba(0,0,0,0.38)');
+  x.fillStyle = vg;
+  x.fillRect(0, 0, w, h);
+  return (vignetteCache = c);
+}
+
+function countryLabels(ctx, info, u, route, meta) {
   const taken = [];
   const items = info.countries
     .filter((c) => route.has(c.code) || c.rank <= 3 || info.dist < 0.9)
@@ -53,7 +67,7 @@ function countryLabels(ctx, info, u, route) {
   for (const c of items) {
     if (c.code === 'KP') continue; // 조선민주주의인민공화국 라벨은 표시하지 않는다
     const far = smooth((info.dist - 0.35) / 0.8); // 최대 줌아웃에 가까울수록 1
-    const size = (route.has(c.code) ? 23 : 16) * 0.85 * (1 - 0.2 * far) * u;
+    const size = (route.has(c.code) ? 23 : 16) * 0.85 * (1 - 0.2 * far) * u * (meta.countryFontScale ?? 1);
     ctx.font = `700 ${size}px ${FONT}`;
     const w = ctx.measureText(c.ko).width, h = size;
     const box = [c.x - w / 2 - 6 * u, c.y - h / 2 - 4 * u, w + 12 * u, h + 8 * u];
@@ -62,7 +76,14 @@ function countryLabels(ctx, info, u, route) {
     // 선택한(출발·도착) 국가는 또렷하게, 나머지 국가는 연한 색·낮은 불투명도로 한 단계 물러나게
     const sel = route.has(c.code);
     ctx.globalAlpha = fade * (sel ? 1 : 0.42);
-    text(ctx, c.ko, c.x, c.y, { size, weight: sel ? 800 : 500, color: sel ? '#ffffff' : '#c4cee0', align: 'center', baseline: 'middle', shadow: sel ? 9 * u : 4 * u });
+    // 글자 그림자(shadowBlur)는 라벨이 많으면 프레임마다 비용이 커서, 얇은 외곽선으로 대신한다
+    ctx.font = `${sel ? 800 : 500} ${size}px ${FONT}`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round'; ctx.lineWidth = (sel ? 4 : 3) * u;
+    ctx.strokeStyle = sel ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.45)';
+    ctx.strokeText(c.ko, c.x, c.y);
+    ctx.fillStyle = sel ? '#ffffff' : '#c4cee0';
+    ctx.fillText(c.ko, c.x, c.y);
   }
   ctx.globalAlpha = 1;
 }
@@ -130,12 +151,8 @@ export function drawHud(ctx, w, h, info, meta) {
   const portrait = h > w;
   ctx.save();
 
-  // 비네트
-  const vg = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.45, w / 2, h / 2, Math.hypot(w, h) * 0.62);
-  vg.addColorStop(0, 'rgba(0,0,0,0)');
-  vg.addColorStop(1, 'rgba(0,0,0,0.38)');
-  ctx.fillStyle = vg;
-  ctx.fillRect(0, 0, w, h);
+  // 비네트 (크기별로 한 번만 그려 두고 매 프레임 복사한다)
+  ctx.drawImage(vignetteFor(w, h), 0, 0);
 
   const intro = smooth(info.t / 0.08);
   const outro = 1;
@@ -143,7 +160,7 @@ export function drawHud(ctx, w, h, info, meta) {
   const far = smooth((info.dist - 0.35) / 0.8);
   const sc = 1 - 0.3 * far;
 
-  if (meta.showCountryLabels !== false) countryLabels(ctx, info, u, meta.routeCountries);
+  if (meta.showCountryLabels !== false) countryLabels(ctx, info, u, meta.routeCountries, meta);
 
   const m = 36 * u;
 
