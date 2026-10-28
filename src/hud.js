@@ -63,27 +63,41 @@ function countryLabels(ctx, info, u, route, meta) {
   const items = info.countries
     .filter((c) => route.has(c.code) || c.rank <= 3 || info.dist < 0.9)
     .sort((a, b) => (route.has(b.code) - route.has(a.code)) || a.rank - b.rank);
+  // 비선택 국가명: 지구 전체·아주 가까운 화면에서 서서히 사라진다
   const fade = smooth((info.dist - 0.12) / 0.25) * smooth((3.4 - info.dist) / 1.0);
+  // 선택(출발·도착) 국가명: 가까이 가도 유지되고, 설정한 시점(영상 진행률)에 서서히 사라진다 (100% = 끝까지 유지)
+  const fadeAt = (meta.selCountryFadeAt ?? 1);
+  const selFade = smooth((3.4 - info.dist) / 1.0) * (fadeAt >= 0.999 ? 1 : 1 - smooth((info.t - fadeAt) / 0.06));
+  const scale = meta.countryFontScale ?? 1.3;
   for (const c of items) {
     if (c.code === 'KP') continue; // 조선민주주의인민공화국 라벨은 표시하지 않는다
+    const sel = route.has(c.code);
     const far = smooth((info.dist - 0.35) / 0.8); // 최대 줌아웃에 가까울수록 1
-    const size = (route.has(c.code) ? 23 : 16) * 0.85 * (1 - 0.2 * far) * u * (meta.countryFontScale ?? 1);
+    const size = (sel ? 23 : 16) * 0.85 * (1 - 0.2 * far) * u * scale;
+    // 선택 국가명은 위·아래·좌·우로 옮길 수 있다 (화면 폭·높이 대비 비율)
+    let ox = 0, oy = 0;
+    if (sel) {
+      const isOrigin = c.code === meta.origin.country;
+      ox = (isOrigin ? meta.originCountryX : meta.destCountryX) ?? 0;
+      oy = (isOrigin ? meta.originCountryY : meta.destCountryY) ?? 0;
+    }
+    const cx = c.x + ox * ctx.canvas.width, cy = c.y + oy * ctx.canvas.height;
     ctx.font = `700 ${size}px ${FONT}`;
     const w = ctx.measureText(c.ko).width, h = size;
-    const box = [c.x - w / 2 - 6 * u, c.y - h / 2 - 4 * u, w + 12 * u, h + 8 * u];
+    const box = [cx - w / 2 - 6 * u, cy - h / 2 - 4 * u, w + 12 * u, h + 8 * u];
     if (taken.some((t) => box[0] < t[0] + t[2] && box[0] + box[2] > t[0] && box[1] < t[1] + t[3] && box[1] + box[3] > t[1])) continue;
     taken.push(box);
-    // 선택한(출발·도착) 국가는 또렷하게, 나머지 국가는 연한 색·낮은 불투명도로 한 단계 물러나게
-    const sel = route.has(c.code);
-    ctx.globalAlpha = fade * (sel ? 1 : 0.42);
+    // 선택한 국가는 또렷하게, 나머지 국가는 연한 색·낮은 불투명도로 한 단계 물러나게
+    ctx.globalAlpha = sel ? selFade : fade * 0.42;
+    if (ctx.globalAlpha <= 0.01) continue;
     // 글자 그림자(shadowBlur)는 라벨이 많으면 프레임마다 비용이 커서, 얇은 외곽선으로 대신한다
     ctx.font = `${sel ? 800 : 500} ${size}px ${FONT}`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.lineJoin = 'round'; ctx.lineWidth = (sel ? 4 : 3) * u;
     ctx.strokeStyle = sel ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.45)';
-    ctx.strokeText(c.ko, c.x, c.y);
+    ctx.strokeText(c.ko, cx, cy);
     ctx.fillStyle = sel ? '#ffffff' : '#c4cee0';
-    ctx.fillText(c.ko, c.x, c.y);
+    ctx.fillText(c.ko, cx, cy);
   }
   ctx.globalAlpha = 1;
 }
@@ -195,15 +209,27 @@ export function drawHud(ctx, w, h, info, meta) {
   const rBase = 12 * u + rSize * 0.95, kBase = rBase + 10 * u + sSize;
   const topH = Math.max(y2 + 30 * u, kBase + 22 * u);
 
-  // 정보 카드 위치: 좌측 하단(bl) · 우측 하단(br) · 좌측 상단(tl) · 우측 상단(tr). 우측 상단은 항공사 박스 아래에 놓는다
-  const pos = meta.cardPos || 'bl';
-  const cardRight = pos === 'br' || pos === 'tr', cardTop = pos === 'tl' || pos === 'tr';
+  // 정보 박스 배치: 항공사 박스와 비행거리 카드는 각각 네 모서리(tl·tr·bl·br) 중 하나에 놓는다.
+  // 같은 모서리를 고르면 항공사 박스가 모서리 쪽, 카드가 그 안쪽(화면 중앙 쪽)에 쌓인다.
+  const cardPos = meta.cardPos || 'tl', topPos = meta.topPos || 'tr';
   const ck = sc * cbs, cw = cardW * ck, chh = cardH * ck;
-  const cardX = cardRight ? w - m - cw : m;
-  const cardY = cardTop ? m + (cardRight && topOn ? topH * sc * tbs + 14 * u : 0) : h - m - chh;
-  // 공항 정보박스가 카드와 겹치지 않도록 허용 범위를 제한
-  const calloutMinY = showCard && cardTop ? cardY + chh + 10 * u : undefined;
-  const cy = showCard && !cardTop ? cardY : h;
+  const tk = sc * tbs, tw = topW * tk, th = topH * tk;
+  const gapStack = 14 * u;
+  const place = (pos, bw, bh, offset) => ({
+    x: pos.endsWith('r') ? w - m - bw : m,
+    y: pos.startsWith('t') ? m + offset : h - m - bh - offset,
+  });
+  const topRect = topOn ? { ...place(topPos, tw, th, 0), w: tw, h: th } : null;
+  const cardOffset = topOn && topPos === cardPos ? th + gapStack : 0;
+  const cardRect = showCard ? { ...place(cardPos, cw, chh, cardOffset), w: cw, h: chh } : null;
+  const cardX = cardRect ? cardRect.x : 0, cardY = cardRect ? cardRect.y : 0;
+  // 공항 정보박스가 위·아래 박스와 겹치지 않도록 허용 범위를 제한
+  let calloutMinY, cy = h;
+  for (const r of [topRect, cardRect]) {
+    if (!r) continue;
+    if (r.y + r.h / 2 < h / 2) calloutMinY = Math.max(calloutMinY ?? 0, r.y + r.h + 10 * u);
+    else cy = Math.min(cy, r.y - 4 * u);
+  }
 
   // 공항 콜아웃: 도착지는 줌인할수록 살짝 커진다. 붉은 타겟이 있으면 그 바깥에서 선이 시작한다
   const z = info.zoom;
@@ -222,18 +248,18 @@ export function drawHud(ctx, w, h, info, meta) {
 
   // ── 우측 상단: 항공사 + 노선(영문 약어 + 작은 국문 표기) ───────────────────
   if (topOn) {
-    const topX = w - m - topW; // 우측 상단
+    const topX = 0, tm = 0; // 박스 좌상단을 원점으로 그린다
     ctx.save();
     ctx.globalAlpha = intro;
-    ctx.translate(w - m, m); ctx.scale(sc * tbs, sc * tbs); ctx.translate(-(w - m), -m);
-    glass(ctx, topX, m, topW, topH, 18 * u, 0.62);
-    roundRect(ctx, topX, m, 10 * u, topH, 5 * u);
+    ctx.translate(topRect.x, topRect.y); ctx.scale(tk, tk);
+    glass(ctx, topX, tm, topW, topH, 18 * u, 0.62);
+    roundRect(ctx, topX, tm, 10 * u, topH, 5 * u);
     ctx.fillStyle = meta.airline.tail; ctx.fill();
-    if (logoW) drawLogoMark(ctx, meta.airline, topX + 34 * u + lr, m + (y1 + y2 - eSize * 0.4) / 2, lr);
-    text(ctx, meta.airline.ko, topX + padL, m + y1, { size: kSize, weight: 700 });
-    text(ctx, en, topX + padL, m + y2, { size: eSize, weight: 500, color: 'rgba(255,255,255,0.65)' });
-    text(ctx, route, topX + topW - padR, m + rBase, { size: rSize, weight: 900, align: 'right', color: '#fff' });
-    text(ctx, routeKo, topX + topW - padR, m + kBase, { size: sSize, weight: 500, align: 'right', color: 'rgba(255,255,255,0.7)' });
+    if (logoW) drawLogoMark(ctx, meta.airline, topX + 34 * u + lr, tm + (y1 + y2 - eSize * 0.4) / 2, lr);
+    text(ctx, meta.airline.ko, topX + padL, tm + y1, { size: kSize, weight: 700 });
+    text(ctx, en, topX + padL, tm + y2, { size: eSize, weight: 500, color: 'rgba(255,255,255,0.65)' });
+    text(ctx, route, topX + topW - padR, tm + rBase, { size: rSize, weight: 900, align: 'right', color: '#fff' });
+    text(ctx, routeKo, topX + topW - padR, tm + kBase, { size: sSize, weight: 500, align: 'right', color: 'rgba(255,255,255,0.7)' });
     ctx.restore();
   }
 

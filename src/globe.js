@@ -61,7 +61,7 @@ export class GlobeScene {
     this.maxAniso = this.renderer.capabilities.getMaxAnisotropy();
     this.flight = null;
     this.patches = new Map();
-    this.options = { borders: true, clouds: true, hdTiles: true, countryLabels: true, originTarget: true, destTarget: true, originTargetScale: 0.55, destTargetScale: 0.5, cardShown: true, cardPos: 'bl', mapZoom: 1, mapRotate: 0, mapTilt: 38, panX: 0, panY: 0, planeSize: 1, globeIntro: false, endZoom: 1, endRotate: 0, endTilt: 52, endPanX: 0, endPanY: 0, depth: 0.7, planeShadow: true, timeOfDay: 'studio', cityLights: 1, cloudAmt: 0.5, cloudSpeed: 1, atmoAmt: 1, starAmt: 0.8, highlight: true, highlightAmt: 1, regionLines: false, duration: 8, wideStart: false, startView: 'auto' };
+    this.options = { borders: true, clouds: true, hdTiles: true, countryLabels: true, originTarget: true, destTarget: true, originTargetScale: 0.55, destTargetScale: 0.5, cardShown: true, cardPos: 'bl', mapZoom: 1, mapRotate: 0, mapTilt: 38, panX: 0, panY: 0, planeSize: 1, globeIntro: false, endZoom: 1, endRotate: 0, endTilt: 52, endPanX: 0, endPanY: 0, depth: 0.7, planeShadow: true, timeOfDay: 'studio', cityLights: 1, cloudAmt: 0.5, cloudSpeed: 1, atmoAmt: 1, starAmt: 0.8, highlight: true, highlightAmt: 1, regionLines: false, tileRange: 2, cloudScale: 1, duration: 8, wideStart: false, startView: 'auto' };
     this.size = { w: 1280, h: 720 };
     this.tmpCam = new THREE.PerspectiveCamera(VFOV, 16 / 9, 0.001, 100);
     // 기체에 금속 반사·하이라이트를 주는 환경 맵 (스튜디오 조명)
@@ -117,15 +117,14 @@ export class GlobeScene {
         this.regionLinesData = regions;
         earth.colorSpace = THREE.SRGBColorSpace;
         earth.anisotropy = this.maxAniso;
-        clouds.colorSpace = THREE.SRGBColorSpace;
+        clouds.colorSpace = THREE.SRGBColorSpace; clouds.anisotropy = this.maxAniso; clouds.generateMipmaps = true;
         this.earthMat.map = earth;
         this.earthMat.normalMap = this.#buildGlobalNormal(topo);
         this.earthMat.normalMap.anisotropy = this.maxAniso;
         this.earthMat.specularMap = water;
         if (night) { night.colorSpace = THREE.SRGBColorSpace; night.anisotropy = this.maxAniso; this.nightU.map.value = night; }
         this.earthMat.needsUpdate = true;
-        this.cloudMat.map = clouds;
-        this.cloudMat.needsUpdate = true;
+        this.cloudU.map.value = clouds;
         this.geo = geo;
         if (this.selCodes) this.#buildSelectionMask(this.selCodes);
         this.#buildBorders(geo);
@@ -136,17 +135,32 @@ export class GlobeScene {
     const blank = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
     blank.needsUpdate = true;
     this.selU = { mask: { value: blank }, blur: { value: blank }, k: { value: 0 } };
+    this.cloudShadowU = { value: 0 };
     this.nightU = { map: { value: null }, sunView: { value: new THREE.Vector3(0, 0, 1) }, lights: { value: 0 }, close: { value: 0 } };
-    this.earthMat = new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 45, specular: 0x333b44, normalScale: new THREE.Vector2(1, 1), polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+    this.earthMat = new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 70, specular: 0x333b44, normalScale: new THREE.Vector2(1, 1), polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
     this.earthMat.onBeforeCompile = (sh) => {
       this.#injectSelection(sh);
+      sh.uniforms.cloudMap = this.cloudU.map; sh.uniforms.uCloudShadow = this.cloudShadowU; sh.uniforms.uDetail = this.nightU.close;
       sh.uniforms.nightMap = this.nightU.map; sh.uniforms.uSunView = this.nightU.sunView; sh.uniforms.uLights = this.nightU.lights; sh.uniforms.uClose = this.nightU.close;
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', `#include <common>
 uniform sampler2D nightMap; uniform vec3 uSunView; uniform float uLights; uniform float uClose;
+uniform sampler2D cloudMap; uniform float uCloudShadow; uniform float uDetail;
 float mmHash(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 float mmNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(mmHash(i), mmHash(i + vec2(1.0, 0.0)), f.x), mix(mmHash(i + vec2(0.0, 1.0)), mmHash(i + vec2(1.0, 1.0)), f.x), f.y); }`)
+        .replace('#include <map_fragment>', `#include <map_fragment>
+#if defined( USE_MAP )
+  {
+    // 구름 그림자: 구름이 드리운 곳의 지표를 어둡게 (구름 지도를 살짝 비껴 읽는다)
+    float cs = texture2D(cloudMap, vMapUv + vec2(0.0042, -0.003)).a;
+    diffuseColor.rgb *= 1.0 - uCloudShadow * smoothstep(0.15, 0.85, cs);
+    // 가까이서 확대되어 뭉개지는 지표 질감에 잔 결을 더해 선명하게 보이게 한다
+    vec2 dq = vMapUv * vec2(4096.0, 2048.0);
+    float g = mmNoise(dq * 3.1) * 0.5 + mmNoise(dq * 9.7) * 0.3 + mmNoise(dq * 27.0) * 0.2;
+    diffuseColor.rgb *= 1.0 + (g - 0.5) * 0.34 * uDetail;
+  }
+#endif`)
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
 #if defined( USE_MAP )
   {
@@ -155,25 +169,61 @@ float mmNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
     vec3 nl = texture2D(nightMap, vMapUv).rgb;
     // 가까이서 보면 2048px 텍스처가 뭉개져 보이므로, 대비를 높이고 잔 점 노이즈로 도시 불빛의 알갱이감을 만든다
     vec2 q = vMapUv * vec2(2048.0, 1024.0);
-    float grain = mmNoise(q * 1.7) * 0.55 + mmNoise(q * 4.3) * 0.45;
-    vec3 lit = pow(nl, vec3(mix(1.35, 2.2, uClose)));
-    lit *= mix(1.0, 0.25 + grain * 2.0, uClose);
-    totalEmissiveRadiance += lit * vec3(1.0, 0.8, 0.52) * nf * uLights * mix(2.6, 2.0, uClose);
+    // 가까이서는 번진 덩어리 대신 점 같은 도시 불빛 알갱이로 표현한다 (밀집 지역일수록 촘촘하고 밝게)
+    float nlum = dot(nl, vec3(0.3333));
+    float rnd = mmNoise(q * 6.0) * 0.6 + mmNoise(q * 15.0) * 0.4;
+    float dotsV = smoothstep(0.56, 0.92, nlum * 1.05 + (rnd - 0.5) * 1.25);
+    vec3 dotLit = nl * (0.04 + 1.5 * dotsV) + pow(nl, vec3(2.2)) * 0.22;
+    vec3 lit = mix(pow(nl, vec3(1.35)), dotLit, uClose);
+    totalEmissiveRadiance += lit * vec3(1.0, 0.8, 0.52) * nf * uLights * mix(2.6, 1.25, uClose);
   }
 #endif`);
     };
     this.earth = new THREE.Mesh(new THREE.SphereGeometry(1, 128, 96), this.earthMat);
     scene.add(this.earth);
 
-    this.cloudMat = new THREE.MeshStandardMaterial({ transparent: true, opacity: 0.55, depthWrite: false, roughness: 1 });
-    this.clouds = new THREE.Mesh(new THREE.SphereGeometry(1.006, 96, 72), this.cloudMat);
+    // 구름: 구름 지도(알파=밀도) + 3D 노이즈로 가까이서도 솜털 같은 디테일, 태양 쪽은 밝고 반대쪽은 푸른 회색으로 음영,
+    // 두꺼운 곳은 하얗고 가장자리는 얇게. 지표에는 구름 그림자가 드리운다(지구 셰이더).
+    this.cloudU = { map: { value: null }, sun: { value: new THREE.Vector3(0.5, 0.6, 0.6) }, opacity: { value: 0.5 }, lit: { value: 1 }, scale: { value: 1 }, close: { value: 0 }, cover: { value: 0.5 } };
+    this.cloudMat = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, uniforms: { map: this.cloudU.map, uSun: this.cloudU.sun, uOpacity: this.cloudU.opacity, uLit: this.cloudU.lit, uScale: this.cloudU.scale, uClose: this.cloudU.close, uCover: this.cloudU.cover },
+      vertexShader: 'varying vec2 vUv; varying vec3 vN; varying vec3 vObj; void main(){ vUv = uv; vN = normalize(normalMatrix * normal); vObj = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: `
+        varying vec2 vUv; varying vec3 vN; varying vec3 vObj;
+        uniform sampler2D map; uniform vec3 uSun; uniform float uOpacity, uLit, uScale, uClose, uCover;
+        float h3(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+        float n3(vec3 x){ vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(mix(h3(i), h3(i + vec3(1,0,0)), f.x), mix(h3(i + vec3(0,1,0)), h3(i + vec3(1,1,0)), f.x), f.y),
+                     mix(mix(h3(i + vec3(0,0,1)), h3(i + vec3(1,0,1)), f.x), mix(h3(i + vec3(0,1,1)), h3(i + vec3(1,1,1)), f.x), f.y), f.z); }
+        float fbm(vec3 p){ float a = 0.5, s = 0.0; for (int i = 0; i < 4; i++) { s += a * n3(p); p = p * 2.03 + 11.7; a *= 0.5; } return s; }
+        void main(){
+          float base = texture2D(map, vUv).a;
+          // 도메인 워프한 노이즈: 구름 덩어리 안쪽의 결을 만든다. uScale이 작을수록 큰 구름
+          vec3 p = vObj * (9.0 / uScale);
+          float warp = fbm(p * 0.6);
+          float n = fbm(p * 2.2 + warp * 2.5);
+          float dens = base * 1.35 + (n - 0.5) * (0.5 + 0.7 * uClose) * smoothstep(0.02, 0.35, base + 0.1);
+          dens = smoothstep(0.34 - 0.2 * uCover, 0.84 - 0.2 * uCover, dens + 0.12 * uCover);
+          // 조명: 태양 반대쪽(밤)은 어둡고 푸른 회색
+          float ndl = dot(normalize(vN), uSun);
+          float lit = smoothstep(-0.2, 0.6, ndl) * uLit + (1.0 - uLit) * 0.25;
+          // 두께 음영: 태양 쪽으로 조금 옮겨 본 밀도가 더 두꺼우면 그늘이 진다
+          float toward = texture2D(map, vUv + vec2(-0.004, 0.0028)).a;
+          float shade = clamp((toward - base) * 2.2 + (n - 0.5) * 0.4, 0.0, 0.7);
+          vec3 shadowC = vec3(0.50, 0.57, 0.70), sunC = vec3(1.0, 0.99, 0.96);
+          vec3 col = mix(shadowC, sunC, lit) * (1.0 - 0.34 * shade);
+          col = mix(col * 0.82, col * 1.06, dens);               // 얇은 가장자리는 살짝 탁하게, 두꺼운 중심은 밝게
+          gl_FragColor = vec4(col, dens * uOpacity);
+        }`,
+    });
+    this.clouds = new THREE.Mesh(new THREE.SphereGeometry(1.01, 128, 96), this.cloudMat);
     scene.add(this.clouds);
 
     this.atmoMat = new THREE.ShaderMaterial({
       transparent: true, side: THREE.BackSide, depthWrite: false, blending: THREE.AdditiveBlending,
       uniforms: { fade: { value: 1 } },
       vertexShader: 'varying vec3 vN; void main(){ vN = normalize(normalMatrix*normal); gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0);} ',
-      fragmentShader: 'varying vec3 vN; uniform float fade; void main(){ float i = pow(max(0.0, 0.68 - dot(vN, vec3(0.0,0.0,1.0))), 3.2); gl_FragColor = vec4(0.28,0.58,1.0,1.0) * i * 1.6 * fade; }',
+      fragmentShader: 'varying vec3 vN; uniform float fade; void main(){ float d = 0.68 - dot(vN, vec3(0.0,0.0,1.0)); float i = pow(max(0.0, d), 3.2); float rim = pow(max(0.0, d), 11.0) * 2.2; gl_FragColor = vec4(mix(vec3(0.28,0.58,1.0), vec3(0.62,0.82,1.0), clamp(rim, 0.0, 1.0)), 1.0) * (i * 1.7 + rim) * fade; }',
     });
     scene.add(new THREE.Mesh(new THREE.SphereGeometry(1.07, 96, 72), this.atmoMat));
 
@@ -232,7 +282,7 @@ float mmNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
     vec3 c = diffuseColor.rgb;
     float lum = dot(c, vec3(0.299, 0.587, 0.114));
     vec3 lifted = c * 1.7 + vec3(0.06, 0.065, 0.05) + c * lum * 0.45;             // 선택 영역: 밝고 선명하게
-    vec3 dimmed = mix(c, vec3(lum), 0.35 * uSel) * (1.0 - 0.36 * uSel);          // 주변 땅·바다: 채도와 밝기를 낮춰 물러나게
+    vec3 dimmed = mix(c, vec3(lum), 0.22 * uSel) * (1.0 - 0.2 * uSel);          // 주변 땅·바다: 한 톤만 가라앉혀 물러나게 (예전보다 밝게)
     c = mix(dimmed, lifted, inside * clamp(uSel, 0.0, 1.5));
     c *= 1.0 + 0.55 * max(bevel, 0.0) * inside * uSel;                             // 빛 받는 안쪽 가장자리 하이라이트
     c *= 1.0 - 0.38 * max(-bevel, 0.0) * inside * uSel;                            // 반대쪽 안쪽 가장자리 음영
@@ -486,8 +536,9 @@ float mmNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
     const f = this.flight;
     const group = this.patchGroup;
     const jobs = [[f.origin, 'origin'], [f.dest, 'dest']].map(async ([ap, role]) => {
-      const key = `${role}:${ap.lat},${ap.lon}`;
-      if (!this.patches.has(key)) this.patches.set(key, buildAirportPatches(ap.lat, ap.lon, this.maxAniso, role).catch(() => []));
+      const range = this.options.tileRange ?? 1;
+      const key = `${role}:${ap.lat},${ap.lon}:${range}`;
+      if (!this.patches.has(key)) this.patches.set(key, buildAirportPatches(ap.lat, ap.lon, this.maxAniso, role, range).catch(() => []));
       return this.patches.get(key);
     });
     this.tilesStatus = 'loading';
@@ -512,6 +563,12 @@ float mmNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
 
   setOptions(o) {
     Object.assign(this.options, o);
+  }
+
+  /** 고해상도 위성 타일 범위(1~4)를 바꾸고 다시 불러온다 */
+  setTileRange(r) {
+    this.options.tileRange = r;
+    if (this.flight) return this.#loadPatches();
   }
 
   /** 미리보기 렌더 해상도 배율(0.5~1). 논리 좌표(HUD 투영)는 그대로 두고 그려지는 픽셀 수만 줄여 끊김을 막는다 */
@@ -869,14 +926,27 @@ float mmNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
       m.emissiveIntensity = emissive * lerp(1, 0.3, dp);
     }
     // Phong 반사는 (shininess+2)/8 배로 증폭되므로 아주 작은 값이면 충분하다 (바다에만 은은한 윤기)
-    this.earthMat.specular.setScalar(lerp(0, 0.014, dp));
+    this.earthMat.specular.setScalar(lerp(0, 0.03, dp)); // 바다에 햇빛이 반사되는 은은한 글린트
     this.renderer.toneMappingExposure = lerp(1, 1.12, dp) * expo;
 
     const dCam = cam.position.length();
     this.atmoMat.uniforms.fade.value = smooth((height - 0.02) / 0.25) * this.options.atmoAmt;
     this.starMat.opacity = this.options.starAmt;
-    this.cloudMat.opacity = this.options.cloudAmt * smooth((height - 0.06) / 0.35);
-    this.clouds.visible = this.options.clouds && height > 0.06;
+    const cloudFade = smooth((height - 0.02) / 0.22);
+    this.cloudU.opacity.value = Math.min(1, this.options.cloudAmt * 1.25) * cloudFade;
+    {
+      // 구름 음영용 광원 방향(카메라 공간)
+      cam.updateMatrixWorld(true);
+      this.tmpM = this.tmpM || new THREE.Matrix4();
+      const sd = this.sun.position.clone().sub(this.sun.target.position).normalize();
+      this.cloudU.sun.value.copy(sd.transformDirection(this.tmpM.copy(cam.matrixWorld).invert()));
+    }
+    this.cloudU.lit.value = tod === 'night' ? 0.12 : 1;
+    this.cloudU.scale.value = this.options.cloudScale;
+    this.cloudU.cover.value = this.options.cloudAmt;
+    this.cloudU.close.value = this.nightU.close.value;
+    this.cloudShadowU.value = this.options.clouds ? 0.3 * (this.options.cloudAmt / 0.5) * cloudFade : 0;
+    this.clouds.visible = this.options.clouds && height > 0.02;
     this.clouds.rotation.y = seconds * 0.004 * this.options.cloudSpeed;
     // 구역별 국경선: 보이는 구역만 그린다
     this.camLookDir = cam.getWorldDirection(this.tmpLook || (this.tmpLook = new THREE.Vector3()));

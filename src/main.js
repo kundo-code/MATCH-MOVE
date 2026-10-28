@@ -26,6 +26,7 @@ const state = {
   playing: true,
   adaptive: true, // 미리보기 해상도 자동 조절
   t: 0,
+  topPos: 'tr', // 항공 정보 박스 위치
   cardPos: 'tl', // 비행거리 / 왕복이동시간 카드 위치: tl · tr · bl · br
   exporting: false,
 };
@@ -224,7 +225,10 @@ function flightMeta() {
     routeCountries: new Set([o.country, d.country]),
     showCountryLabels: $('optCountries').checked,
     showCard: $('optCard').checked,
-    cardPos: state.cardPos,
+    cardPos: state.cardPos, topPos: state.topPos,
+    originCountryX: +$('originCountryX').value / 100, originCountryY: +$('originCountryY').value / 100,
+    destCountryX: +$('destCountryX').value / 100, destCountryY: +$('destCountryY').value / 100,
+    selCountryFadeAt: +$('selFadeAt').value / 100,
     countryFontScale: +$('countryFont').value / 100,
     showOriginTarget: $('optOriginTarget').checked,
     showDestTarget: $('optDestTarget').checked,
@@ -255,14 +259,8 @@ function refreshMeta() {
   updateSummaries?.();
 }
 
-function applyFlight() {
-  const o = originOf(), d = destOf(), a = airlineOf();
-  refreshMeta();
-  // 동남아시아는 아시아 전체가 보이는 넓은 시작 화면이 기본
-  scene.setOptions({ wideStart: state.regionId === 'southeast-asia', duration: state.duration });
-  updateSummaries?.();
-  scene.setFlight({ origin: o, dest: d, livery: a, routeColor: a.route });
-  updateHighlight();
+/** 고해상도 위성 타일 로딩 상태를 배지로 보여준다 */
+function trackTiles() {
   const badge = $('tilesBadge');
   badge.hidden = !$('optHd').checked;
   badge.textContent = '고해상도 위성 타일 불러오는 중…';
@@ -271,6 +269,17 @@ function applyFlight() {
     badge.textContent = n ? '고해상도 위성 타일 적용됨' : '고해상도 타일 없음 (오프라인) · 기본 지구 텍스처 사용';
     setTimeout(() => { badge.hidden = true; }, 3500);
   });
+}
+
+function applyFlight() {
+  const o = originOf(), d = destOf(), a = airlineOf();
+  refreshMeta();
+  // 동남아시아는 아시아 전체가 보이는 넓은 시작 화면이 기본
+  scene.setOptions({ wideStart: state.regionId === 'southeast-asia', duration: state.duration, tileRange: +$('tileRange').value });
+  updateSummaries?.();
+  scene.setFlight({ origin: o, dest: d, livery: a, routeColor: a.route });
+  updateHighlight();
+  trackTiles();
 }
 
 // ── 프레임 합성 ───────────────────────────────────────────────────────
@@ -835,10 +844,10 @@ function wirePointOptions() {
   $('optHighlight').onchange = () => scene.setOptions({ highlight: $('optHighlight').checked });
   $('highlightAmt').oninput = (e) => { $('highlightAmtOut').textContent = `${e.target.value}%`; scene.setOptions({ highlightAmt: +e.target.value / 100 }); };
   $('timeOfDay').onchange = () => { scene.setOptions({ timeOfDay: $('timeOfDay').value }); };
-  for (const [id, opt, k] of [['cityLights', 'cityLights', 100], ['cloudAmt', 'cloudAmt', 100], ['cloudSpeed', 'cloudSpeed', 100], ['atmoAmt', 'atmoAmt', 100], ['starAmt', 'starAmt', 100]]) {
+  for (const [id, opt, k] of [['cityLights', 'cityLights', 100], ['cloudAmt', 'cloudAmt', 100], ['cloudScale', 'cloudScale', 100], ['cloudSpeed', 'cloudSpeed', 100], ['atmoAmt', 'atmoAmt', 100], ['starAmt', 'starAmt', 100]]) {
     $(id).oninput = (e) => { $(`${id}Out`).textContent = `${e.target.value}%`; scene.setOptions({ [opt]: +e.target.value / k }); };
   }
-  scene.setOptions({ cloudAmt: +$('cloudAmt').value / 100 });
+  scene.setOptions({ cloudAmt: +$('cloudAmt').value / 100, cloudScale: +$('cloudScale').value / 100 });
   $('depth').oninput = (e) => {
     $('depthOut').textContent = `${e.target.value}%`;
     scene.setOptions({ depth: +e.target.value / 100 });
@@ -863,6 +872,21 @@ function wirePointOptions() {
     updateSummaries?.();
   };
   document.querySelectorAll('#cardPos button').forEach((b) => { b.onclick = () => setCardPos(b.dataset.pos); });
+  // 항공 정보 박스 위치
+  document.querySelectorAll('#topPos button').forEach((b) => {
+    b.onclick = () => {
+      state.topPos = b.dataset.pos;
+      document.querySelectorAll('#topPos button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+      refreshMeta(); updateSummaries?.();
+    };
+  });
+  // 선택 국가명 위치·사라지는 시점
+  for (const id of ['originCountryX', 'originCountryY', 'destCountryX', 'destCountryY']) $(id).oninput = (e) => { $(`${id}Out`).textContent = e.target.value; refreshMeta(); };
+  $('selFadeAt').oninput = (e) => { $('selFadeOut').textContent = `${e.target.value}%`; refreshMeta(); };
+  // 고해상도 타일 범위 (놓는 순간 다시 불러온다)
+  const TILE_RANGE_KO = { 1: '공항 주변만 (±7°)', 2: '주변 국가까지 (±17°)', 3: '인접 권역 (±28°)', 4: '넓은 권역 (±45°)' };
+  $('tileRange').oninput = (e) => { $('tileRangeOut').textContent = TILE_RANGE_KO[e.target.value]; };
+  $('tileRange').onchange = (e) => { scene.setTileRange(+e.target.value); trackTiles(); };
   // 출발/도착 지점별 타겟·정보박스 크기
   for (const [id, label, apply] of [
     ['originTargetSize', 'originTargetSizeOut', (v) => scene.setOptions({ originTargetScale: v })],

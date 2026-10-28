@@ -134,7 +134,7 @@ async function buildPatch(lat, lon, { zoom, n, elev }, renderOrder, maxAnisotrop
     if (nc) { normalMap = new THREE.CanvasTexture(nc); normalMap.anisotropy = maxAnisotropy; }
   }
 
-  const seg = 40, pos = [], uv = [], idx = [];
+  const seg = n > 6 ? 72 : 40, pos = [], uv = [], idx = [];
   const r = 1 + 0.00003 * renderOrder; // 최대 1.0001 — 기체·경로선보다 항상 아래
   for (let j = 0; j <= seg; j++) for (let i = 0; i <= seg; i++) {
     const [px, py, pz] = latLonToVec(yToLat(y0 + (n * j) / seg, zoom), xToLon(x0 + (n * i) / seg, zoom), r);
@@ -162,11 +162,13 @@ async function buildPatch(lat, lon, { zoom, n, elev }, renderOrder, maxAnisotrop
 
 // 넓은 범위(저해상도) → 좁은 범위(고해상도) 순으로 겹친다.
 // 도착 공항은 줌인이 끝나는 곳이라 더 촘촘한 레벨과 고도(노멀맵)까지 불러온다.
+// 범위 단계(1~4): 공항 주변만 → 주변 국가(±17°) → 인접 권역(±28°) → 넓은 권역(±45°). 더 넓은 범위는 더 낮은 줌 레벨을 맨 아래에 깐다.
+const EXTRA_LEVELS = { 2: [{ zoom: 6, n: 6 }], 3: [{ zoom: 5, n: 5 }], 4: [{ zoom: 5, n: 8 }] };
 const LEVELS_ORIGIN = [{ zoom: 7, n: 5 }, { zoom: 9, n: 5 }];
 const LEVELS_DEST = [{ zoom: 7, n: 5 }, { zoom: 9, n: 7, elev: true }, { zoom: 11, n: 5, elev: true }];
 
-export async function buildAirportPatches(lat, lon, maxAnisotropy, role = 'dest') {
-  const levels = role === 'origin' ? LEVELS_ORIGIN : LEVELS_DEST;
+export async function buildAirportPatches(lat, lon, maxAnisotropy, role = 'dest', range = 1) {
+  const levels = [...(EXTRA_LEVELS[range] || []), ...(role === 'origin' ? LEVELS_ORIGIN : LEVELS_DEST)];
   const meshes = await Promise.all(levels.map((l, i) => buildPatch(lat, lon, l, i + 1, maxAnisotropy)));
   return meshes.filter(Boolean);
 }

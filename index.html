@@ -185,6 +185,15 @@
                 <label class="check"><input type="checkbox" id="optTop" checked /> 항공사 · 노선(약어 + 국문) 박스</label>
                 <label class="check"><input type="checkbox" id="optAirlineLogo" checked /> 항공사 로고 마크 표시</label>
               </div></div>
+              <div class="sg"><div class="sg-title">위치</div><div class="sg-body">
+                <div class="posgrid" id="topPos" role="radiogroup" aria-label="항공 정보 위치">
+                  <button type="button" data-pos="tl" aria-pressed="false">↖ 좌측 상단</button>
+                  <button type="button" data-pos="tr" aria-pressed="true">우측 상단 ↗</button>
+                  <button type="button" data-pos="bl" aria-pressed="false">↙ 좌측 하단</button>
+                  <button type="button" data-pos="br" aria-pressed="false">우측 하단 ↘</button>
+                </div>
+                <small class="hint2">비행거리 / 왕복이동시간 카드와 같은 모서리를 고르면 항공 정보가 모서리 쪽, 카드가 그 안쪽에 쌓입니다.</small>
+              </div></div>
               <div class="sg"><div class="sg-title">크기</div><div class="sg-body">
                 <label class="zoomrow">박스 크기 <output id="topBoxSizeOut">90%</output>
                   <input id="topBoxSize" type="range" min="40" max="250" step="1" value="90" />
@@ -260,8 +269,11 @@
                 </label>
               </div></div>
               <div class="sg"><div class="sg-title">구름 · 대기 · 별</div><div class="sg-body">
-                <label class="zoomrow">구름 양 <output id="cloudAmtOut">50%</output>
-                  <input id="cloudAmt" type="range" min="0" max="100" step="1" value="50" />
+                <label class="zoomrow">구름 양 <output id="cloudAmtOut">65%</output>
+                  <input id="cloudAmt" type="range" min="0" max="100" step="1" value="65" />
+                </label>
+                <label class="zoomrow">구름 크기(덩어리 규모) <output id="cloudScaleOut">100%</output>
+                  <input id="cloudScale" type="range" min="40" max="300" step="5" value="100" />
                 </label>
                 <label class="zoomrow">구름 흐르는 속도 <output id="cloudSpeedOut">100%</output>
                   <input id="cloudSpeed" type="range" min="0" max="800" step="10" value="100" />
@@ -283,11 +295,27 @@
                 <label class="check"><input type="checkbox" id="optBorders" checked /> 국경선 (GeoJSON)</label>
                 <label class="check"><input type="checkbox" id="optRegionLines" /> 지역 구분선 <small>(시·도·성 경계, 가까이 볼 때 은은하게)</small></label>
                 <label class="check"><input type="checkbox" id="optCountries" checked /> 국가명 라벨</label>
-                <label class="zoomrow">국가명 글자 크기 <output id="countryFontOut">100%</output>
-                  <input id="countryFont" type="range" min="50" max="220" step="5" value="100" />
+                <label class="zoomrow">국가명 글자 크기 <output id="countryFontOut">130%</output>
+                  <input id="countryFont" type="range" min="50" max="220" step="5" value="130" />
                 </label>
                 <label class="check"><input type="checkbox" id="optClouds" checked /> 구름</label>
                 <label class="check"><input type="checkbox" id="optHd" checked /> 공항 주변 고해상도 위성 타일 <small>(Esri, 온라인)</small></label>
+              </div></div>
+            <div class="sg"><div class="sg-title">선택 국가명 (출발국 · 도착국)</div><div class="sg-body">
+                <label class="zoomrow">출발국 이름 좌 ↔ 우 <output id="originCountryXOut">0</output><input id="originCountryX" type="range" min="-40" max="40" step="1" value="0" /></label>
+                <label class="zoomrow">출발국 이름 위 ↕ 아래 <output id="originCountryYOut">0</output><input id="originCountryY" type="range" min="-40" max="40" step="1" value="0" /></label>
+                <label class="zoomrow">도착국 이름 좌 ↔ 우 <output id="destCountryXOut">0</output><input id="destCountryX" type="range" min="-40" max="40" step="1" value="0" /></label>
+                <label class="zoomrow">도착국 이름 위 ↕ 아래 <output id="destCountryYOut">0</output><input id="destCountryY" type="range" min="-40" max="40" step="1" value="0" /></label>
+                <label class="zoomrow">선택 국가명이 사라지는 시점 <output id="selFadeOut">80%</output>
+                  <input id="selFadeAt" type="range" min="0" max="100" step="1" value="80" />
+                  <small>영상 진행률 기준입니다. 100%면 끝까지 유지됩니다. 이름 위치는 화면 크기 대비 %입니다.</small>
+                </label>
+              </div></div>
+              <div class="sg"><div class="sg-title">고해상도 위성 타일 범위</div><div class="sg-body">
+                <label class="zoomrow">범위 <output id="tileRangeOut">주변 국가까지 (±17°)</output>
+                  <input id="tileRange" type="range" min="1" max="4" step="1" value="2" />
+                  <small>공항 주변만(±7°) → 주변 국가(±17°) → 인접 권역(±28°) → 넓은 권역(±45°). 넓을수록 지도가 선명하지만 타일을 더 많이 불러옵니다(온라인).</small>
+                </label>
               </div></div>
             </details>
           </div>
