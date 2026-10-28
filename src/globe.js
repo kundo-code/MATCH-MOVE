@@ -61,7 +61,7 @@ export class GlobeScene {
     this.maxAniso = this.renderer.capabilities.getMaxAnisotropy();
     this.flight = null;
     this.patches = new Map();
-    this.options = { borders: true, clouds: true, hdTiles: true, countryLabels: true, originTarget: true, destTarget: true, originTargetScale: 0.55, destTargetScale: 0.5, cardShown: true, cardPos: 'bl', mapZoom: 1, mapRotate: 0, mapTilt: 38, panX: 0, panY: 0, planeSize: 1, globeIntro: false, endZoom: 1, endRotate: 0, endTilt: 52, endPanX: 0, endPanY: 0, depth: 0.7, planeShadow: true, timeOfDay: 'studio', cityLights: 1, cloudAmt: 0.5, cloudSpeed: 1, atmoAmt: 1, starAmt: 0.8, highlight: true, highlightAmt: 1, regionLines: false, tileRange: 2, cloudScale: 1, duration: 8, wideStart: false, startView: 'auto' };
+    this.options = { borders: true, clouds: true, hdTiles: true, countryLabels: true, originTarget: true, destTarget: true, originTargetScale: 0.55, destTargetScale: 0.5, cardShown: true, cardPos: 'bl', mapZoom: 1, mapRotate: 0, mapTilt: 38, panX: 0, panY: 0, planeSize: 1, globeIntro: false, endZoom: 1, endRotate: 0, endTilt: 52, endPanX: 0, endPanY: 0, depth: 0.7, planeShadow: true, timeOfDay: 'studio', cityLights: 1, cloudAmt: 0.5, cloudSpeed: 1, atmoAmt: 1, starAmt: 0.8, highlight: true, highlightAmt: 1, regionLines: true, borderAlpha: 0.5, regionAlpha: 0.35, tileRange: 2, cloudScale: 1, duration: 8, wideStart: false, startView: 'auto' };
     this.size = { w: 1280, h: 720 };
     this.tmpCam = new THREE.PerspectiveCamera(VFOV, 16 / 9, 0.001, 100);
     // 기체에 금속 반사·하이라이트를 주는 환경 맵 (스튜디오 조명)
@@ -950,7 +950,7 @@ float mmNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
     this.clouds.rotation.y = seconds * 0.004 * this.options.cloudSpeed;
     // 구역별 국경선: 보이는 구역만 그린다
     this.camLookDir = cam.getWorldDirection(this.tmpLook || (this.tmpLook = new THREE.Vector3()));
-    if (this.regionMat) this.regionMat.opacity = 0.34 * (1 - smooth((height - 0.5) / 1.0));
+    if (this.regionMat) this.regionMat.opacity = this.options.regionAlpha * (1 - smooth((height - 0.5) / 1.0));
     this.#cullChunks(this.borderChunks, this.options.borders, cam.position, cam);
     this.#cullChunks(this.selBorderChunks, this.options.borders && this.options.highlight, cam.position, cam);
     this.#cullChunks(this.regionChunks, this.options.regionLines, cam.position, cam);
@@ -966,8 +966,9 @@ float mmNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
     // 강조가 켜져 있으면 비선택 국가 국경선은 연하게, 선택 국가 국경선은 굵고 선명하게
     const hk = this.options.highlight ? Math.min(1, this.options.highlightAmt) : 0;
     const near = 1 - 0.7 * smooth((0.3 - height) / 0.25);
-    if (this.borderMat) this.borderMat.opacity = 0.5 * near * (1 - 0.62 * hk);
-    if (this.borderSelMat) this.borderSelMat.opacity = Math.min(1, 0.55 + 0.45 * near);
+    const ba = this.options.borderAlpha / 0.5; // 진하기 슬라이더(기본 50%) 배율
+    if (this.borderMat) this.borderMat.opacity = Math.min(1, 0.5 * ba * near * (1 - 0.62 * hk));
+    if (this.borderSelMat) this.borderSelMat.opacity = Math.min(1, (0.55 + 0.45 * near) * ba);
 
     // 비행기
     const planePos = this.#pointAt(st.s);

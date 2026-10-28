@@ -81,7 +81,7 @@ function drawTemplate(ctx, w, h, u, tpl, p, vis, cfg, mode, text, meta) {
   const blockH = (title ? tLines.length * tSize * 1.25 : 0) + (sub ? sLines.length * sSize * 1.3 + 18 * u : 0);
 
   const centered = (alpha, yShift = 0) => {
-    const logoH = cfg.logo ? drawLogo(ctx, cfg.logo, w / 2, h / 2 - blockH / 2 - 70 * u + yShift, w * 0.3, 110 * u, alpha) : 0;
+    const logoH = cfg.logo ? drawLogo(ctx, cfg.logo, w / 2, h / 2 - blockH / 2 - 70 * u + yShift, w * 0.3 * (cfg.logoScale || 1), 110 * u * (cfg.logoScale || 1), alpha) : 0;
     const top = h / 2 - blockH / 2 + (logoH ? 30 * u : 0) + yShift;
     if (title) textBlock(ctx, tLines, w / 2, top + tSize * 0.6, { size: tSize, weight: 800, alpha });
     const lineY = top + tLines.length * tSize * 1.25 + 4 * u;
@@ -102,7 +102,7 @@ function drawTemplate(ctx, w, h, u, tpl, p, vis, cfg, mode, text, meta) {
     ctx.fillStyle = g; ctx.fillRect(0, bottom - bh - 80 * u, w, h - (bottom - bh - 80 * u));
     ctx.fillStyle = accent; ctx.fillRect(x0 + slide, bottom - bh, 6 * u, bh);
     ctx.restore();
-    const logoW = cfg.logo ? drawLogo(ctx, cfg.logo, x0 + 26 * u + slide, bottom - bh - 44 * u, 220 * u, 64 * u, alpha, 'left') : 0;
+    const logoW = cfg.logo ? drawLogo(ctx, cfg.logo, x0 + 26 * u + slide, bottom - bh - 44 * u, 220 * u * (cfg.logoScale || 1), 64 * u * (cfg.logoScale || 1), alpha, 'left') : 0;
     void logoW;
     if (title) textBlock(ctx, tLines, x0 + 26 * u + slide, bottom - bh + tSize * 0.62, { size: tSize * 0.8, align: 'left', weight: 800, alpha });
     if (sub) textBlock(ctx, sLines, x0 + 26 * u + slide, bottom - bh + (title ? tLines.length * tSize * 1.0 : 0) + sSize * 1.2 + 4 * u, { size: sSize * 0.9, align: 'left', weight: 500, color: '#dbe6f5', alpha });
@@ -156,11 +156,16 @@ function drawTemplate(ctx, w, h, u, tpl, p, vis, cfg, mode, text, meta) {
       textBlock(ctx, [`가는 편  ${formatDuration(meta.outMin)}`], cx + 70 * u, cy + 212 * u, { size: 34 * u, weight: 700, color: '#7dd3fc', align: 'left', alpha: vis, shadow: 0 });
       textBlock(ctx, [`오는 편  ${formatDuration(meta.backMin)}`], cx + cw * 0.5, cy + 212 * u, { size: 34 * u, weight: 700, color: '#fcd34d', align: 'left', alpha: vis, shadow: 0 });
       if (title) textBlock(ctx, [title], cx + 70 * u, cy + ch - 34 * u, { size: 24 * u, weight: 500, color: '#dbe6f5', align: 'left', alpha: vis, shadow: 0 });
-      if (cfg.logo) drawLogo(ctx, cfg.logo, cx + cw - 40 * u, cy + 60 * u, 200 * u, 60 * u, vis, 'right');
+      if (cfg.logo) drawLogo(ctx, cfg.logo, cx + cw - 40 * u, cy + 60 * u, 200 * u * (cfg.logoScale || 1), 60 * u * (cfg.logoScale || 1), vis, 'right');
       break;
     }
     default: break;
   }
+}
+
+function rgba(hex, a) {
+  const n = parseInt(String(hex).replace('#', '').padEnd(6, '0'), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 }
 
 function drawSubtitle(ctx, w, h, u, sec, cfg, meta) {
@@ -168,6 +173,7 @@ function drawSubtitle(ctx, w, h, u, sec, cfg, meta) {
   if (!sub) return;
   const a = smooth((sec - sub.start) / 0.18) * smooth((sub.end - sec) / 0.18);
   if (a <= 0) return;
+  const st = cfg.subStyle;
   const size = 40 * u * cfg.subSize;
   ctx.save();
   ctx.font = `700 ${size}px ${FONT}`;
@@ -180,17 +186,27 @@ function drawSubtitle(ctx, w, h, u, sec, cfg, meta) {
   ctx.globalAlpha = a;
   if (cfg.subBg) {
     ctx.beginPath(); ctx.roundRect(w / 2 - bw / 2, cy - bh / 2, bw, bh, size * 0.3);
-    ctx.fillStyle = 'rgba(0,0,0,0.58)'; ctx.fill();
+    ctx.fillStyle = rgba(st.bgColor, st.bgAlpha); ctx.fill();
   }
   ctx.font = `700 ${size}px ${FONT}`;
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.shadowColor = 'rgba(0,0,0,0.9)'; ctx.shadowBlur = cfg.subBg ? 0 : 14 * u;
-  ctx.lineWidth = size * 0.1; ctx.strokeStyle = cfg.subBg ? 'transparent' : 'rgba(0,0,0,0.65)'; ctx.lineJoin = 'round';
-  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
+  const yOf = (i) => cy - ((lines.length - 1) * lh) / 2 + i * lh;
+  // 1) 그림자: 글자 모양 그대로 흐리게 (불투명도 조절)
+  if (st.shadow && st.shadowAlpha > 0) {
+    ctx.save();
+    ctx.shadowColor = rgba('#000000', st.shadowAlpha); ctx.shadowBlur = 12 * u; ctx.shadowOffsetX = 2 * u; ctx.shadowOffsetY = 3 * u;
+    ctx.fillStyle = rgba(st.textColor, 1);
+    lines.forEach((l, i) => ctx.fillText(l, w / 2, yOf(i)));
+    ctx.restore();
+  }
+  // 2) 외곽선 → 3) 글자
   lines.forEach((l, i) => {
-    const y = cy - ((lines.length - 1) * lh) / 2 + i * lh;
-    if (!cfg.subBg) ctx.strokeText(l, w / 2, y);
-    ctx.fillText(l, w / 2, y);
+    if (st.outline && st.outlineW > 0) {
+      ctx.lineWidth = st.outlineW * u * 2; ctx.strokeStyle = st.outlineColor;
+      ctx.strokeText(l, w / 2, yOf(i));
+    }
+    ctx.fillStyle = st.textColor;
+    ctx.fillText(l, w / 2, yOf(i));
   });
   ctx.restore();
 }
@@ -208,7 +224,14 @@ export function drawOverlays(ctx, w, h, sec, total, cfg, meta) {
   // 항상 표시되는 채널 로고 워터마크 (인트로/아웃트로 동안 중앙에 로고가 나오면 겹치지 않게 숨김)
   if (cfg.logo && cfg.logoWater) {
     const busy = (intro.tpl !== 'none' && sec < intro.dur) || (outro.tpl !== 'none' && sec > total - outro.dur);
-    if (!busy) drawLogo(ctx, cfg.logo, w - 36 * u, h - 70 * u, 190 * u, 56 * u, 0.9, 'right');
+    if (!busy) {
+      // 네 모서리 중 선택한 위치 + 위·아래 미세 조정, 크기 배율 적용
+      const k = cfg.logoScale || 1, lw = 190 * u * k, lh = 56 * u * k, pos = cfg.logoPos || 'br';
+      const x = pos.endsWith('r') ? w - 36 * u : 36 * u;
+      const yBase = pos.startsWith('t') ? 36 * u + lh / 2 : h - 36 * u - lh / 2;
+      const y = clamp(yBase + (cfg.logoOffset || 0) * h, lh / 2 + 4 * u, h - lh / 2 - 4 * u);
+      drawLogo(ctx, cfg.logo, x, y, lw, lh, 0.9, pos.endsWith('r') ? 'right' : 'left');
+    }
   }
 
   drawSubtitle(ctx, w, h, u, sec, cfg, meta);

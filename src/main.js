@@ -589,13 +589,19 @@ async function startRecording() {
 function stopRecording() { if (recorder.mr?.state === 'recording') recorder.mr.stop(); }
 
 // ── 인트로 · 아웃트로 · 자막 ─────────────────────────────────────────────
-const story = { subs: [], dirty: true, cfg: null, logo: null };
+const story = { subs: [], dirty: true, cfg: null, logo: null, logoPos: 'br' };
 function storyCfg() {
   if (story.cfg && !story.dirty) return story.cfg;
   story.dirty = false;
   const part = (p) => ({ tpl: $(`${p}Tpl`).value, title: $(`${p}Title`).value, sub: $(`${p}Sub`).value, dur: +$(`${p}Dur`).value });
   story.cfg = {
     color: $('storyColor').value, logo: story.logo, logoWater: $('logoWater').checked,
+    logoScale: +$('logoSize').value / 100, logoPos: story.logoPos, logoOffset: +$('logoOffset').value / 100,
+    subStyle: {
+      textColor: $('subTextColor').value, bgColor: $('subBgColor').value, bgAlpha: +$('subBgAlpha').value / 100,
+      outline: $('subOutline').checked, outlineW: +$('subOutlineW').value, outlineColor: $('subOutlineColor').value,
+      shadow: $('subShadow').checked, shadowAlpha: +$('subShadowAlpha').value / 100,
+    },
     intro: part('intro'), outro: part('outro'),
     subs: $('optSubs').checked ? story.subs.map((x) => ({ ...x })) : [],
     subPos: $('subPos').value, subOffset: +$('subOffset').value / 100, subBg: $('subBg').checked, subSize: +$('subSize').value / 100,
@@ -638,7 +644,7 @@ function wireStory() {
   for (const [id, list] of [['introTpl', INTRO_TEMPLATES], ['outroTpl', OUTRO_TEMPLATES]]) {
     $(id).innerHTML = list.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
   }
-  for (const [id, out, f] of [['introDur', 'introDurOut', (v) => `${v}초`], ['outroDur', 'outroDurOut', (v) => `${v}초`], ['outroHold', 'holdOut', (v) => `${v}초`], ['subSize', 'subSizeOut', (v) => `${v}%`], ['subOffset', 'subOffsetOut', (v) => `${v}%`]]) {
+  for (const [id, out, f] of [['introDur', 'introDurOut', (v) => `${v}초`], ['outroDur', 'outroDurOut', (v) => `${v}초`], ['outroHold', 'holdOut', (v) => `${v}초`], ['subSize', 'subSizeOut', (v) => `${v}%`], ['subOffset', 'subOffsetOut', (v) => `${v}%`], ['logoSize', 'logoSizeOut', (v) => `${v}%`], ['logoOffset', 'logoOffsetOut', (v) => `${v}%`], ['subBgAlpha', 'subBgAlphaOut', (v) => `${v}%`], ['subOutlineW', 'subOutlineWOut', (v) => `${v}`], ['subShadowAlpha', 'subShadowAlphaOut', (v) => `${v}%`]]) {
     $(id).addEventListener('input', (e) => { $(out).textContent = f(e.target.value); });
   }
   const dirty = () => { story.dirty = true; };
@@ -652,6 +658,13 @@ function wireStory() {
     story.dirty = true; renderSubList(); updateSummaries?.();
   };
   $('subAuto').onclick = autoSubtitles;
+  // 워터마크 로고 위치
+  document.querySelectorAll('#logoPos button').forEach((b) => {
+    b.onclick = () => {
+      story.logoPos = b.dataset.pos; story.dirty = true;
+      document.querySelectorAll('#logoPos button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    };
+  });
   $('optSubs').addEventListener('change', () => updateSummaries?.());
   // 채널 로고
   $('logoFile').onchange = (e) => {
@@ -710,6 +723,10 @@ function syncViewUi() {
   $('mapRotateOut').textContent = `${r}°`;
   $('mapTilt').value = Math.round(t.tilt);
   $('mapTiltOut').textContent = `${Math.round(t.tilt)}°`;
+  // 패닝: 오른쪽이 +, 아래쪽이 + (화면 높이 대비 %)
+  const px = clampN(Math.round(-t.panX * 100), -100, 100), py = clampN(Math.round(t.panY * 100), -100, 100);
+  $('panXs').value = px; $('panXOut').textContent = px;
+  $('panYs').value = py; $('panYOut').textContent = py;
   for (const tab of document.querySelectorAll('[data-viewtab]')) tab.setAttribute('aria-pressed', tab.dataset.viewtab === view.active);
   $('viewEditing').textContent = view.active === 'start' ? '시작 화면' : '도착 화면';
   updateSummaries?.();
@@ -729,6 +746,8 @@ function wireView() {
   // 슬라이더 값(-180~180)에 가장 가까운 각도로 이동 → 경계를 넘을 때 반대로 한 바퀴 돌지 않는다
   $('mapRotate').oninput = (e) => { const t = activeTgt(); t.rot += wrap180(+e.target.value - wrap180(t.rot)); syncViewUi(); };
   $('mapTilt').oninput = (e) => { activeTgt().tilt = clampN(+e.target.value, 0, 70); syncViewUi(); };
+  $('panXs').oninput = (e) => { activeTgt().panX = -(+e.target.value) / 100; syncViewUi(); };
+  $('panYs').oninput = (e) => { activeTgt().panY = (+e.target.value) / 100; syncViewUi(); };
   const reset = () => {
     const key = view.active, t = activeTgt();
     Object.assign(t, VIEW_DEFAULT[key]);
@@ -805,21 +824,33 @@ function setupPanel() {
   panel.addEventListener('change', () => updateSummaries());
 
   // 접기 상태 기억 (저장소를 쓸 수 없는 환경에서도 동작)
-  const KEY = 'match-move.panel.v2';
+  // 1~9번 큰 항목은 한 번에 하나만 펼쳐진다: 다른 항목을 열면 나머지는 자동으로 접힌다. 그 안의 소항목(그룹)은 자유롭게 접고 편다.
+  const KEY = 'match-move.panel.v3';
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch { /* 무시 */ }
   const all = [...panel.querySelectorAll('details')];
+  const secs = all.filter((d) => d.classList.contains('sec'));
+  // toggle 이벤트는 비동기로 오므로 시간으로 막는다: 처음 구성하거나 펼치기/접기 버튼으로 한꺼번에 바꾸는 동안에는 한 개만 열기 규칙을 쓰지 않는다
+  let quietUntil = performance.now() + 400;
+  // 저장된 값에서 처음 열려 있던 큰 항목 하나만 연다 (없으면 도착 공항)
+  const firstOpen = secs.find((d) => saved[d.dataset.sec] === true)?.dataset.sec ?? 'dest';
   all.forEach((d, i) => {
     const id = d.dataset.sec || `grp${i}`;
     d.dataset.key = id;
-    d.open = id in saved ? !!saved[id] : (id === 'origin' || id === 'dest'); // 기본: 출발·도착 공항만 펼침
+    if (d.classList.contains('sec')) d.open = id === firstOpen;
+    else d.open = id in saved ? !!saved[id] : false;
     d.addEventListener('toggle', () => {
+      if (d.classList.contains('sec') && d.open && performance.now() > quietUntil) {
+        for (const o of secs) if (o !== d && o.open) { o.open = false; saved[o.dataset.key] = false; }
+        // 방금 연 항목이 화면 위쪽에 보이도록 (앞 항목이 접히면서 위치가 바뀌므로)
+        requestAnimationFrame(() => d.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+      }
       saved[id] = d.open;
       try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch { /* 무시 */ }
     });
   });
-  $('expandAll').onclick = () => all.forEach((d) => { d.open = true; });
-  $('collapseAll').onclick = () => all.forEach((d) => { d.open = false; });
+  $('expandAll').onclick = () => { quietUntil = performance.now() + 400; all.forEach((d) => { d.open = true; }); };
+  $('collapseAll').onclick = () => { quietUntil = performance.now() + 400; all.forEach((d) => { d.open = false; }); };
   updateSummaries();
 }
 
@@ -943,6 +974,9 @@ async function init() {
   $('optClouds').onchange = (e) => scene.setOptions({ clouds: e.target.checked });
   $('optCountries').onchange = (e) => { scene.setOptions({ countryLabels: e.target.checked }); refreshMeta(); };
   $('optRegionLines').onchange = (e) => scene.setOptions({ regionLines: e.target.checked });
+  const setBorderAlpha = () => scene.setOptions({ borderAlpha: +$('borderAlpha').value / 100, regionAlpha: +$('regionAlpha').value / 100, regionLines: $('optRegionLines').checked });
+  for (const id of ['borderAlpha', 'regionAlpha']) $(id).oninput = (e) => { $(`${id}Out`).textContent = `${e.target.value}%`; setBorderAlpha(); };
+  setBorderAlpha();
   $('countryFont').oninput = (e) => { $('countryFontOut').textContent = `${e.target.value}%`; refreshMeta(); };
   $('optHd').onchange = (e) => { scene.setOptions({ hdTiles: e.target.checked }); refreshMeta(); };
   $('duration').oninput = (e) => { state.duration = +e.target.value; scene.setOptions({ duration: state.duration }); $('durationOut').textContent = `${state.duration}초`; updateBitrateHint(); };

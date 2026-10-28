@@ -40,16 +40,16 @@ for (const u of ['**/server.arcgisonline.com/**', '**/elevation-tiles-prod/**', 
 try {
   await page.goto(url);
   await page.waitForFunction(() => window.__app?.scene?.tilesPromise, null, { timeout: 90000 });
-  await page.evaluate(() => { __app.state.playing = false; });
+  await page.evaluate(() => { __app.state.playing = false; __app.state.exporting = true; }); // 소프트웨어 렌더링에서는 미리보기 프레임이 느려 클릭 안정화를 막으므로 미리보기 루프를 멈춘다
   ok('앱이 오류 없이 시작', errs.length === 0, errs.join(' | '));
 
   // 권역 → 국가 → 공항
-  await page.click('#regions button:nth-child(2)');
-  await page.click('#stpCountry .combo-btn');
-  await page.click('#stpCountry .combo-item:nth-child(1)');
-  await page.click('#stpAirport .combo-btn');
+  await page.click('#regions button:nth-child(2)', { force: true });
+  await page.click('#stpCountry .combo-btn', { force: true });
+  await page.click('#stpCountry .combo-item:nth-child(1)', { force: true });
+  await page.click('#stpAirport .combo-btn', { force: true });
   const n = await page.locator('#stpAirport .combo-item').count();
-  await page.click('#stpAirport .combo-item:nth-child(1)');
+  await page.click('#stpAirport .combo-item:nth-child(1)', { force: true });
   ok('권역→국가→공항 선택', n > 0 && (await page.evaluate(() => !!__app.meta.dest.iata)), `${n}개 공항`);
 
   // 인트로/아웃트로/자막/믹스

@@ -107,6 +107,13 @@
                 <label class="zoomrow">기울기 <output id="mapTiltOut">38°</output>
                   <input id="mapTilt" type="range" min="0" max="70" step="1" value="38" />
                 </label>
+                <label class="zoomrow">좌 ← → 우 이동 (패닝) <output id="panXOut">0</output>
+                  <input id="panXs" type="range" min="-100" max="100" step="1" value="0" />
+                </label>
+                <label class="zoomrow">위 ↑ ↓ 아래 이동 (패닝) <output id="panYOut">0</output>
+                  <input id="panYs" type="range" min="-100" max="100" step="1" value="0" />
+                  <small>지구본 전체를 화면 높이 대비 %만큼 옮깁니다. 지도를 마우스로 드래그해도 같은 값이 바뀝니다.</small>
+                </label>
                 <button id="viewReset" class="btn small" type="button">이 화면 초기화</button>
               </div>
             </div>
@@ -293,7 +300,13 @@
               </div></div>
               <div class="sg"><div class="sg-title">레이어</div><div class="sg-body">
                 <label class="check"><input type="checkbox" id="optBorders" checked /> 국경선 (GeoJSON)</label>
-                <label class="check"><input type="checkbox" id="optRegionLines" /> 지역 구분선 <small>(시·도·성 경계, 가까이 볼 때 은은하게)</small></label>
+                <label class="check"><input type="checkbox" id="optRegionLines" checked /> 지역 구분선 <small>(시·도·성 경계, 가까이 볼 때 은은하게)</small></label>
+                <label class="zoomrow">국경선 진하기 <output id="borderAlphaOut">50%</output>
+                  <input id="borderAlpha" type="range" min="5" max="100" step="1" value="50" />
+                </label>
+                <label class="zoomrow">지역 구분선 진하기 <output id="regionAlphaOut">35%</output>
+                  <input id="regionAlpha" type="range" min="5" max="100" step="1" value="35" />
+                </label>
                 <label class="check"><input type="checkbox" id="optCountries" checked /> 국가명 라벨</label>
                 <label class="zoomrow">국가명 글자 크기 <output id="countryFontOut">130%</output>
                   <input id="countryFont" type="range" min="50" max="220" step="5" value="130" />
@@ -355,7 +368,20 @@
               <div class="sg-title">채널 로고 · 색상</div>
               <div class="sg-body">
                 <div class="filerow"><label class="filebtn">로고 이미지 선택<input id="logoFile" type="file" accept="image/*" hidden /></label><span id="logoName" class="fname">선택 안 됨</span><button id="logoClear" class="link" type="button" hidden>삭제</button></div>
-                <label class="check"><input type="checkbox" id="logoWater" /> 영상 내내 우측 하단에 워터마크로 표시</label>
+                <label class="check"><input type="checkbox" id="logoWater" /> 영상 내내 워터마크로 표시</label>
+                <label class="zoomrow">로고 크기 <output id="logoSizeOut">100%</output>
+                  <input id="logoSize" type="range" min="30" max="300" step="5" value="100" />
+                </label>
+                <div class="posgrid" id="logoPos" role="radiogroup" aria-label="워터마크 로고 위치">
+                  <button type="button" data-pos="tl" aria-pressed="false">↖ 좌측 상단</button>
+                  <button type="button" data-pos="tr" aria-pressed="false">우측 상단 ↗</button>
+                  <button type="button" data-pos="bl" aria-pressed="false">↙ 좌측 하단</button>
+                  <button type="button" data-pos="br" aria-pressed="true">우측 하단 ↘</button>
+                </div>
+                <label class="zoomrow">위치 미세 조정 (위 ↑ / 아래 ↓) <output id="logoOffsetOut">0%</output>
+                  <input id="logoOffset" type="range" min="-30" max="30" step="1" value="0" />
+                  <small>워터마크 위치는 위 4개 모서리 중에서 고르고, 화면 높이 대비 %만큼 위·아래로 옮깁니다. 로고 크기는 인트로·아웃트로 로고에도 적용됩니다.</small>
+                </label>
                 <label class="colorrow">포인트 색상 <input id="storyColor" type="color" value="#4da3ff" /></label>
               </div>
             </div>
@@ -375,6 +401,23 @@
                 </label>
                 <label class="zoomrow">글자 크기 <output id="subSizeOut">100%</output>
                   <input id="subSize" type="range" min="50" max="200" step="5" value="100" />
+                </label>
+                <div class="sg-sub">글자 · 배경 색상</div>
+                <label class="colorrow">글자 색상 <input id="subTextColor" type="color" value="#ffffff" /></label>
+                <label class="colorrow">배경 박스 색상 <input id="subBgColor" type="color" value="#000000" /></label>
+                <label class="zoomrow">배경 박스 불투명도 <output id="subBgAlphaOut">58%</output>
+                  <input id="subBgAlpha" type="range" min="0" max="100" step="1" value="58" />
+                </label>
+                <div class="sg-sub">글자 외곽선</div>
+                <label class="check"><input type="checkbox" id="subOutline" checked /> 글자 외곽선</label>
+                <label class="zoomrow">외곽선 두께 <output id="subOutlineWOut">4</output>
+                  <input id="subOutlineW" type="range" min="0" max="16" step="0.5" value="4" />
+                </label>
+                <label class="colorrow">외곽선 색상 <input id="subOutlineColor" type="color" value="#000000" /></label>
+                <div class="sg-sub">글자 그림자</div>
+                <label class="check"><input type="checkbox" id="subShadow" checked /> 글자 그림자</label>
+                <label class="zoomrow">그림자 불투명도 <output id="subShadowAlphaOut">80%</output>
+                  <input id="subShadowAlpha" type="range" min="0" max="100" step="1" value="80" />
                 </label>
               </div>
             </div>
