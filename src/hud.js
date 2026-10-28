@@ -73,7 +73,7 @@ function countryLabels(ctx, info, u, route) {
  *  - 지점이 화면 중심 왼쪽이면 박스의 우측 중앙 끝, 오른쪽이면 좌측 중앙 끝으로 연결한다 (박스는 지점의 반대 방향 위쪽)
  *  - offX/offY(화면 폭·높이 대비 비율)로 박스를 옮겨도 선은 지점에서 박스 하단 모서리로 자연스럽게 이어진다
  */
-function callout(ctx, pt, u, { maxY, gap = 8, color, tag, name, sub, big = 1, alpha = 1, scale = 1, offX = 0, offY = 0 }) {
+function callout(ctx, pt, u, { minY, maxY, gap = 8, color, tag, name, sub, big = 1, alpha = 1, scale = 1, offX = 0, offY = 0 }) {
   if (!pt.visible || alpha <= 0.01) return;
   const k = 0.8 * big * scale;
   ctx.save();
@@ -95,7 +95,7 @@ function callout(ctx, pt, u, { maxY, gap = 8, color, tag, name, sub, big = 1, al
   const fitsL = pt.x - gapX - w >= margin, fitsR = pt.x + gapX + w <= cw - margin;
   const boxLeft = pt.x < cw / 2 ? (fitsL || !fitsR) : !(fitsR || !fitsL);
   const x = clamp((boxLeft ? pt.x - gapX - w : pt.x + gapX) + offX * cw, margin, cw - w - margin);
-  const y = clamp(pt.y - gap * u - h * 1.5 + offY * ch, margin, (maxY ?? ch) - h - margin);
+  const y = clamp(pt.y - gap * u - h * 1.5 + offY * ch, minY ?? margin, (maxY ?? ch) - h - margin);
 
   // 연결선: 지점 → 박스 옆면 중앙. 박스를 옮겨도 지점이 박스 오른쪽이면 우측 중앙, 왼쪽이면 좌측 중앙으로 붙는다
   const ax = pt.x > x + w / 2 ? x + w : x;
@@ -161,39 +161,50 @@ export function drawHud(ctx, w, h, info, meta) {
   const colGap = 44 * u;
   const cardW = 22 * u * 2 + colWs.reduce((x, y) => x + y, 0) + colGap * 2;
   const cardH = 18 * u + labelSize + 8 * u + valueSize + 28 * u;
-  const cyFull = h - m - cardH;
-  const cy = showCard ? h - m - cardH * sc * cbs : h;
+
+  // 우측 상단 항공사 박스 치수 (정보 카드가 같은 모서리에 올 때 겹치지 않도록 먼저 계산)
+  const tbs = meta.topBoxScale ?? 1, tfs = meta.topFontScale ?? 1;
+  const topOn = meta.showTop !== false;
+  const kSize = 31 * u * tfs, eSize = 17 * u * tfs, rSize = 44 * 0.9 * u * tfs, sSize = 16 * u * tfs;
+  const route = `${meta.origin.iata}  →  ${meta.dest.iata}`;
+  const routeKo = `${shortKo(meta.origin)}  →  ${shortKo(meta.dest)}`;
+  const en = meta.airline.en.toUpperCase();
+  const leftW = Math.max(measure(meta.airline.ko, kSize, 700), measure(en, eSize, 500));
+  const rightW = Math.max(measure(route, rSize, 900), measure(routeKo, sSize, 500));
+  const lr = (kSize + eSize * 0.7) * 0.62, logoW = meta.showAirlineLogo === false ? 0 : lr * 2 + 14 * u;
+  const padL = 34 * u + logoW, padR = 28 * u, gapT = 44 * u;
+  const topW = Math.min(w - m * 2, padL + leftW + gapT + rightW + padR);
+  const y1 = 15 * u + kSize, y2 = y1 + 14 * u + eSize;
+  const rBase = 12 * u + rSize * 0.95, kBase = rBase + 10 * u + sSize;
+  const topH = Math.max(y2 + 30 * u, kBase + 22 * u);
+
+  // 정보 카드 위치: 좌측 하단(bl) · 우측 하단(br) · 좌측 상단(tl) · 우측 상단(tr). 우측 상단은 항공사 박스 아래에 놓는다
+  const pos = meta.cardPos || 'bl';
+  const cardRight = pos === 'br' || pos === 'tr', cardTop = pos === 'tl' || pos === 'tr';
+  const ck = sc * cbs, cw = cardW * ck, chh = cardH * ck;
+  const cardX = cardRight ? w - m - cw : m;
+  const cardY = cardTop ? m + (cardRight && topOn ? topH * sc * tbs + 14 * u : 0) : h - m - chh;
+  // 공항 정보박스가 카드와 겹치지 않도록 허용 범위를 제한
+  const calloutMinY = showCard && cardTop ? cardY + chh + 10 * u : undefined;
+  const cy = showCard && !cardTop ? cardY : h;
 
   // 공항 콜아웃: 도착지는 줌인할수록 살짝 커진다. 붉은 타겟이 있으면 그 바깥에서 선이 시작한다
   const z = info.zoom;
   // 붉은 타겟(3D 씬)의 바깥에서 선이 시작한다. 타겟 반지름은 줌인할수록 도착 쪽만 커진다
   const gapOf = (on, zz, k = 1) => (on ? (24 + 30 * zz) * k + 4 : 8);
   if (meta.showOriginBox !== false) callout(ctx, info.origin, u, {
-    maxY: cy, scale: sc * (meta.originBoxScale ?? 1), gap: gapOf(meta.showOriginTarget, 0, meta.originTargetScale ?? 1), color: '#4ade80', tag: '출발 · DEPARTURE', offX: meta.originBoxX ?? 0, offY: meta.originBoxY ?? 0,
+    minY: calloutMinY, maxY: cy, scale: sc * (meta.originBoxScale ?? 1), gap: gapOf(meta.showOriginTarget, 0, meta.originTargetScale ?? 1), color: '#4ade80', tag: '출발 · DEPARTURE', offX: meta.originBoxX ?? 0, offY: meta.originBoxY ?? 0,
     name: `${meta.origin.ko || meta.origin.en}`, sub: `${meta.originCountry.ko} · ${meta.origin.iata}`,
     alpha: intro * (1 - smooth((z - 0.2) / 0.5) * 0.9),
   });
   if (meta.showDestBox !== false) callout(ctx, info.dest, u, {
-    maxY: cy, scale: Math.min(sc, 0.7) * (meta.destBoxScale ?? 1), gap: gapOf(meta.showDestTarget, z, meta.destTargetScale ?? 1), color: '#ffb020', tag: '도착 · ARRIVAL', offX: meta.destBoxX ?? 0, offY: meta.destBoxY ?? 0, // 도착 정보박스는 기본 70% 크기
+    minY: calloutMinY, maxY: cy, scale: Math.min(sc, 0.7) * (meta.destBoxScale ?? 1), gap: gapOf(meta.showDestTarget, z, meta.destTargetScale ?? 1), color: '#ffb020', tag: '도착 · ARRIVAL', offX: meta.destBoxX ?? 0, offY: meta.destBoxY ?? 0, // 도착 정보박스는 기본 70% 크기
     name: `${meta.dest.ko || meta.dest.en}`, sub: `${meta.destCountry.ko} · ${meta.dest.iata}`,
     alpha: intro,
   });
 
   // ── 우측 상단: 항공사 + 노선(영문 약어 + 작은 국문 표기) ───────────────────
-  if (meta.showTop !== false) {
-    const tbs = meta.topBoxScale ?? 1, tfs = meta.topFontScale ?? 1;
-    const kSize = 31 * u * tfs, eSize = 17 * u * tfs, rSize = 44 * 0.9 * u * tfs, sSize = 16 * u * tfs;
-    const route = `${meta.origin.iata}  →  ${meta.dest.iata}`;
-    const routeKo = `${shortKo(meta.origin)}  →  ${shortKo(meta.dest)}`;
-    const en = meta.airline.en.toUpperCase();
-    const leftW = Math.max(measure(meta.airline.ko, kSize, 700), measure(en, eSize, 500));
-    const rightW = Math.max(measure(route, rSize, 900), measure(routeKo, sSize, 500));
-    const lr = (kSize + eSize * 0.7) * 0.62, logoW = meta.showAirlineLogo === false ? 0 : lr * 2 + 14 * u;
-    const padL = 34 * u + logoW, padR = 28 * u, gapT = 44 * u;
-    const topW = Math.min(w - m * 2, padL + leftW + gapT + rightW + padR);
-    const y1 = 15 * u + kSize, y2 = y1 + 14 * u + eSize;
-    const rBase = 12 * u + rSize * 0.95, kBase = rBase + 10 * u + sSize;
-    const topH = Math.max(y2 + 30 * u, kBase + 22 * u);
+  if (topOn) {
     const topX = w - m - topW; // 우측 상단
     ctx.save();
     ctx.globalAlpha = intro;
@@ -211,8 +222,8 @@ export function drawHud(ctx, w, h, info, meta) {
 
   if (showCard) {
     ctx.save();
-    ctx.translate(m, h - m); ctx.scale(sc * cbs, sc * cbs); ctx.translate(-m, -(h - m));
-    const cy0 = cyFull, cx = m;
+    ctx.translate(cardX, cardY); ctx.scale(ck, ck);
+    const cy0 = 0, cx = 0;
     glass(ctx, cx, cy0, cardW, cardH, 18 * u, 0.7);
     let x = cx + 22 * u;
     stats.forEach((st, i) => {

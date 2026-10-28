@@ -61,7 +61,7 @@ export class GlobeScene {
     this.maxAniso = this.renderer.capabilities.getMaxAnisotropy();
     this.flight = null;
     this.patches = new Map();
-    this.options = { borders: true, clouds: true, hdTiles: true, countryLabels: true, originTarget: true, destTarget: true, originTargetScale: 0.55, destTargetScale: 0.5, cardShown: true, mapZoom: 1, mapRotate: 0, mapTilt: 38, panX: 0, panY: 0, planeSize: 1, globeIntro: false, endZoom: 1, endRotate: 0, endTilt: 52, endPanX: 0, endPanY: 0, depth: 0.7, planeShadow: true, timeOfDay: 'studio', cityLights: 1, cloudAmt: 0.5, cloudSpeed: 1, atmoAmt: 1, starAmt: 0.8, highlight: true, highlightAmt: 1, duration: 8, wideStart: false, startView: 'auto' };
+    this.options = { borders: true, clouds: true, hdTiles: true, countryLabels: true, originTarget: true, destTarget: true, originTargetScale: 0.55, destTargetScale: 0.5, cardShown: true, cardPos: 'bl', mapZoom: 1, mapRotate: 0, mapTilt: 38, panX: 0, panY: 0, planeSize: 1, globeIntro: false, endZoom: 1, endRotate: 0, endTilt: 52, endPanX: 0, endPanY: 0, depth: 0.7, planeShadow: true, timeOfDay: 'studio', cityLights: 1, cloudAmt: 0.5, cloudSpeed: 1, atmoAmt: 1, starAmt: 0.8, highlight: true, highlightAmt: 1, duration: 8, wideStart: false, startView: 'auto' };
     this.size = { w: 1280, h: 720 };
     this.tmpCam = new THREE.PerspectiveCamera(VFOV, 16 / 9, 0.001, 100);
     // 기체에 금속 반사·하이라이트를 주는 환경 맵 (스튜디오 조명)
@@ -741,8 +741,9 @@ float mmNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
     cam.up.copy(head);
     cam.lookAt(st.C);
     const height = Math.max(1e-4, cam.position.length() - 1);
-    // 하단 정보 카드에 가리지 않도록 장면을 위로 살짝 올린다
-    cam.setViewOffset(w, h, 0, this.options.cardShown ? Math.round(h * (w < h ? 0.04 : 0.02)) : 0, w, h);
+    // 정보 카드에 가리지 않도록 장면을 카드 반대쪽으로 살짝 옮긴다 (카드가 아래면 위로, 위면 아래로)
+    const cardSign = this.options.cardPos?.startsWith('t') ? -1 : 1;
+    cam.setViewOffset(w, h, 0, this.options.cardShown ? Math.round(h * (w < h ? 0.04 : 0.02)) * cardSign : 0, w, h);
     cam.near = Math.max(0.0008, Math.min(0.5, height * 0.25));
     cam.far = 120;
     cam.updateProjectionMatrix();

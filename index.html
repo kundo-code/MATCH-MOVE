@@ -195,9 +195,18 @@
               </div></div>
             </details>
             <details class="grp">
-              <summary><i class="dot ic">▬</i>하단 정보 카드<span class="sum" id="sumCardOpt"></span></summary>
+              <summary><i class="dot ic">▬</i>비행거리 / 왕복이동시간<span class="sum" id="sumCardOpt"></span></summary>
               <div class="sg"><div class="sg-title">표시</div><div class="sg-body">
-                <label class="check"><input type="checkbox" id="optCardGrp" checked /> 비행거리 · 가는 편 · 오는 편 카드</label>
+                <label class="check"><input type="checkbox" id="optCardGrp" checked /> 비행거리 / 왕복이동시간 카드 표시</label>
+              </div></div>
+              <div class="sg"><div class="sg-title">위치</div><div class="sg-body">
+                <div class="posgrid" id="cardPos" role="radiogroup" aria-label="비행거리 / 왕복이동시간 카드 위치">
+                  <button type="button" data-pos="tl" aria-pressed="false">↖ 좌측 상단</button>
+                  <button type="button" data-pos="tr" aria-pressed="false">우측 상단 ↗</button>
+                  <button type="button" data-pos="bl" aria-pressed="true">↙ 좌측 하단</button>
+                  <button type="button" data-pos="br" aria-pressed="false">우측 하단 ↘</button>
+                </div>
+                <small class="hint2">우측 상단은 항공사 박스 바로 아래에 놓입니다.</small>
               </div></div>
               <div class="sg"><div class="sg-title">크기</div><div class="sg-body">
                 <label class="zoomrow">박스 크기 <output id="cardBoxSizeOut">100%</output>
@@ -466,7 +475,7 @@
         <input id="scrub" type="range" min="0" max="1000" value="0" />
         <button id="soundBtn" class="btn icon" type="button" aria-label="사운드 켜기/끄기" title="사운드 켜기/끄기">🔊</button>
         <input id="soundVolQ" class="volq" type="range" min="0" max="100" step="1" value="60" title="음량 60%" aria-label="음량" />
-        <label class="switch" title="좌측 하단 정보 카드 표시/숨김"><input type="checkbox" id="optCard" checked /><i></i><span>정보 카드</span></label>
+        <label class="switch" title="비행거리 / 왕복이동시간 카드 표시/숨김"><input type="checkbox" id="optCard" checked /><i></i><span>비행거리 / 왕복이동시간</span></label>
         <span id="clock">0:00 / 0:15</span>
       </div>
     </main>

@@ -211,3 +211,9 @@ textarea, .sublist input[type=text] { width: 100%; background: #0e1730; color: v
 .grp { border-color: rgba(130,175,255,.28); background: rgba(255,255,255,.03); }
 .grp > summary { background: #1c2c52; border-radius: 9px; }
 .grp[open] > summary { background: #243a6b; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+
+/* 정보 카드 위치 선택 (2×2) */
+.posgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.posgrid button { background: #101a35; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 9px 6px; font: inherit; font-size: 12.5px; cursor: pointer; }
+.posgrid button:hover { background: #17254a; }
+.posgrid button[aria-pressed="true"] { background: #2b4a8a; border-color: rgba(150,190,255,.7); font-weight: 700; }

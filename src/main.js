@@ -25,6 +25,7 @@ const state = {
   duration: 8,
   playing: true,
   t: 0,
+  cardPos: 'bl', // 비행거리 / 왕복이동시간 카드 위치: tl · tr · bl · br
   exporting: false,
 };
 
@@ -222,6 +223,7 @@ function flightMeta() {
     routeCountries: new Set([o.country, d.country]),
     showCountryLabels: $('optCountries').checked,
     showCard: $('optCard').checked,
+    cardPos: state.cardPos,
     showOriginTarget: $('optOriginTarget').checked,
     showDestTarget: $('optDestTarget').checked,
     showTop: $('optTop').checked,
@@ -760,7 +762,7 @@ function setupPanel() {
     t('sumDestOpt', `타겟 ${onoff('optDestTarget')} · 박스 ${onoff('optDestBox')}`);
     t('sumPlane', `${$('planeSize').value}%`);
     t('sumTopOpt', `${onoff('optTop')} · 박스 ${$('topBoxSize').value}% · 글자 ${$('topFontSize').value}%`);
-    t('sumCardOpt', `${onoff('optCard')} · 박스 ${$('cardBoxSize').value}% · 글자 ${$('cardFontSize').value}%`);
+    t('sumCardOpt', `${onoff('optCard')} · ${{ tl: '좌상', tr: '우상', bl: '좌하', br: '우하' }[state.cardPos]} · 박스 ${$('cardBoxSize').value}% · 글자 ${$('cardFontSize').value}%`);
     t('sumFx', `${{ studio: '스튜디오', dusk: '황혼', night: '야간' }[$('timeOfDay').value]} · 구름 ${$('cloudAmt').value}%`);
     t('sumDepth', `${$('depth').value}%${$('optShadow').checked ? ' · 그림자' : ''}`);
     const maps = ['optIntro', 'optBorders', 'optCountries', 'optClouds', 'optHd'].filter((id) => $(id).checked).length;
@@ -832,6 +834,15 @@ function wirePointOptions() {
   const syncCard = (on) => { $('optCard').checked = on; $('optCardGrp').checked = on; scene.setOptions({ cardShown: on }); refreshMeta(); };
   $('optCard').onchange = () => syncCard($('optCard').checked);
   $('optCardGrp').onchange = () => syncCard($('optCardGrp').checked);
+  // 카드 위치 (좌측/우측 · 상단/하단)
+  const setCardPos = (pos) => {
+    state.cardPos = pos;
+    document.querySelectorAll('#cardPos button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.pos === pos)));
+    scene.setOptions({ cardPos: pos });
+    refreshMeta();
+    updateSummaries?.();
+  };
+  document.querySelectorAll('#cardPos button').forEach((b) => { b.onclick = () => setCardPos(b.dataset.pos); });
   // 출발/도착 지점별 타겟·정보박스 크기
   for (const [id, label, apply] of [
     ['originTargetSize', 'originTargetSizeOut', (v) => scene.setOptions({ originTargetScale: v })],
