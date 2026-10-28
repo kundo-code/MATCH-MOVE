@@ -418,7 +418,7 @@ const recorder = { on: false, mr: null, stream: null, chunks: [] };
 const hasAnyAudio = () => $('optSound').checked || !!tracks.bgm || !!tracks.narr;
 const soundOn = () => !audio.muted && hasAnyAudio();
 const soundVolume = () => +$('soundVol').value / 100;
-const engineKey = () => [state.originId, state.destId, state.duration, $('optIntro').checked].join('|');
+const engineKey = () => [state.originId, state.destId, state.duration, holdSec(), $('optIntro').checked].join('|');
 const audioKey = () => [engineKey(), totalSec(), audio.ver].join('|');
 
 function applyVolume() {
@@ -438,7 +438,7 @@ function unlockAudio() {
 async function getEngineBuffer() {
   const key = engineKey();
   if (audio.engine && audio.engineKey === key) return audio.engine;
-  const b = await renderFlightAudio({ duration: state.duration, stateAt: (t) => scene.flightState(t) });
+  const b = await renderFlightAudio({ duration: state.duration, tail: holdSec(), stateAt: (t) => scene.flightState(t) });
   audio.engine = b; audio.engineKey = key;
   return b;
 }

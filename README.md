@@ -124,6 +124,7 @@ scripts/build-data.mjs   OurAirports·Natural Earth → public/data/*.json  (npm
 도착지 권역 버튼과 공항 목록에 자동 반영됩니다. 한국어 공항명은 `scripts/airport-names-ko.mjs`(주요 공항), `scripts/airport-names-ko-extra.mjs`(소규모 공항)에 추가합니다(없으면 영문명 표시).
 
 ## 데이터 출처 / 라이선스 유의
+- 착륙 효과음: `public/sounds/`의 타이어 마찰음 2종·역추력 굉음은 사용자가 제공한 음원(freesound_community, cryptowista)을 잘라 쓴 것입니다. 영상을 공개·수익화할 때는 해당 음원의 라이선스 조건(출처 표기 등)을 확인하세요.
 - 지구 텍스처: NASA Blue Marble (three-globe 예제 이미지)
 - 국경·국가명: Natural Earth (퍼블릭 도메인)
 - 공항: OurAirports (퍼블릭 도메인)

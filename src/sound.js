@@ -1,5 +1,6 @@
 // 비행 사운드: 이륙 → 상승 → 순항 → 하강 → 접지·역추력 → 정지까지 엔진음을 합성한다.
-// 전부 Web Audio로 만들기 때문에 별도 음원 파일이 필요 없고, 같은 버퍼를 미리보기 재생과 MP4 오디오 트랙에 그대로 쓴다.
+// 기본 엔진음은 Web Audio로 합성하고, 착륙 장면(타이어 마찰음·역추력 굉음)은 public/sounds의 실제 음원 샘플을 얹는다.
+// 샘플을 불러오지 못하면 합성음만으로 동작한다. 같은 버퍼를 미리보기 재생과 MP4 오디오 트랙에 그대로 쓴다.
 // 음량·음높이는 비행 애니메이션(진행률·고도·접지)에 맞춰 자동으로 변한다.
 
 const smoothstep01 = (t) => t * t * (3 - 2 * t);
@@ -8,6 +9,28 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const smooth = (t) => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
 
 export const SAMPLE_RATE = 48000;
+
+// 착륙 효과음 샘플 (mp3). 타이어 마찰음 2종(접지 '찍', 이어지는 스키드)과 역추력 굉음
+const SAMPLE_FILES = { chirp: 'sounds/tire-chirp.mp3', skid: 'sounds/tire-skid.mp3', roar: 'sounds/engine-roar.mp3' };
+let samplePromise = null;
+/** 샘플 로드(한 번만). 하나라도 실패하면 null → 합성음으로 대체 */
+export function loadLandingSamples() {
+  if (!samplePromise) {
+    samplePromise = (async () => {
+      try {
+        const dec = new OfflineAudioContext(2, 1, SAMPLE_RATE);
+        const out = {};
+        for (const [k, url] of Object.entries(SAMPLE_FILES)) {
+          const res = await fetch(url);
+          if (!res.ok) throw new Error(`${url} ${res.status}`);
+          out[k] = await dec.decodeAudioData(await res.arrayBuffer());
+        }
+        return out;
+      } catch (e) { console.warn('착륙 효과음 샘플을 불러오지 못해 합성음을 사용합니다', e); return null; }
+    })();
+  }
+  return samplePromise;
+}
 
 /** 비행 진행(p)에서의 엔진 출력(0~1) */
 function throttleAt(p) {
@@ -53,11 +76,13 @@ function curve(param, values, start, dur) {
  * @param stateAt    (t01) => { p, altN, touchdown }  — GlobeScene.flightState
  * @returns AudioBuffer (2채널, 48kHz). 음량은 1.0 기준이며 사용자가 따로 곱한다.
  */
-export async function renderFlightAudio({ duration, stateAt }) {
+export async function renderFlightAudio({ duration: flightDur, tail = 0, stateAt }) {
+  const samples = await loadLandingSamples();
+  const duration = flightDur + tail; // 도착 후 연장 구간(tail)에도 활주·역추력 소리가 자연스럽게 이어진다
   const ctx = new OfflineAudioContext(2, Math.ceil(duration * SAMPLE_RATE), SAMPLE_RATE);
   const RATE = 40; // 초당 자동화 샘플
   const N = Math.max(2, Math.ceil(duration * RATE));
-  const sample = (fn) => Array.from({ length: N }, (_, i) => fn(stateAt(Math.min(1, i / (N - 1))), i / (N - 1)));
+  const sample = (fn) => Array.from({ length: N }, (_, i) => fn(stateAt(Math.min(1, ((i / (N - 1)) * duration) / flightDur)), i / (N - 1)));
 
   const thr = sample((s) => throttleAt(s.p));
   // 카메라(지면)와 가까울수록 크게: 이륙·착륙은 크고 순항은 작게
@@ -148,30 +173,50 @@ export async function renderFlightAudio({ duration, stateAt }) {
       g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(peak, t0 + 0.008); g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
       o.connect(g); g.connect(master); o.start(t0); o.stop(at(t0 + dur + 0.05));
     };
-    // 주바퀴 접지
+    // 샘플 재생 도우미: 시작 시각·크기·재생 속도·페이드를 지정해 효과음 한 번 재생
+    const play = (buf, t0, gain, { rate = 1, fadeIn = 0.004, fadeOut = 0.06, maxDur = Infinity } = {}) => {
+      if (!buf || t0 >= duration - 0.05) return;
+      const len = Math.min(buf.duration / rate, maxDur, duration - t0);
+      const src = ctx.createBufferSource(); src.buffer = buf; src.playbackRate.value = rate;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t0);
+      g.gain.linearRampToValueAtTime(gain, t0 + Math.min(fadeIn, len / 2));
+      g.gain.setValueAtTime(gain, Math.max(t0 + fadeIn, t0 + len - fadeOut));
+      g.gain.linearRampToValueAtTime(0, t0 + len);
+      src.connect(g); g.connect(master); src.start(t0); src.stop(t0 + len + 0.02);
+    };
+    // 주바퀴 접지: 충격 + 기체가 내려앉는 둔탁한 울림
     thump(tdTime, 105, 38, 0.62, 0.5);
-    burst(brown, 'lowpass', 220, 90, 0.7, tdTime, 0.55, 0.9);          // 기체가 내려앉는 둔탁한 울림
-    burst(white, 'bandpass', 2600, 1100, 1.8, tdTime, 0.32, 0.34, 0.003); // 타이어가 닿는 '찍' 소리
-    burst(white, 'bandpass', 900, 500, 1.2, tdTime + 0.02, 0.7, 0.22, 0.02); // 고무가 노면을 긁는 스크럽
-    // 타이어 스퀼(짧은 고음 마찰음): 속도가 붙었다가 빠르게 사라진다
-    if (tdTime < duration - 0.3) {
-      const sq = ctx.createOscillator(); sq.type = 'sawtooth';
-      const sf = ctx.createBiquadFilter(); sf.type = 'bandpass'; sf.Q.value = 6;
-      const sg = ctx.createGain();
-      sq.frequency.setValueAtTime(1150, tdTime); sq.frequency.exponentialRampToValueAtTime(620, tdTime + 0.3);
-      sf.frequency.setValueAtTime(1500, tdTime); sf.frequency.exponentialRampToValueAtTime(900, tdTime + 0.3);
-      sg.gain.setValueAtTime(0, tdTime); sg.gain.linearRampToValueAtTime(0.09, tdTime + 0.01); sg.gain.exponentialRampToValueAtTime(0.001, tdTime + 0.3);
-      sq.connect(sf); sf.connect(sg); sg.connect(master); sq.start(tdTime); sq.stop(at(tdTime + 0.35));
+    burst(brown, 'lowpass', 220, 90, 0.7, tdTime, 0.55, 0.9);
+    if (samples) {
+      // 실제 타이어 마찰음: 접지 순간의 '찍' → 이어지는 스키드(고무가 노면을 긁으며 미끄러지는 소리)
+      play(samples.chirp, tdTime, 0.6);
+      play(samples.skid, tdTime + 0.05, 0.45, { fadeIn: 0.02, fadeOut: 0.35 });
+      // 반대쪽 바퀴는 살짝 늦게, 조금 낮고 작게
+      thump(tdTime + 0.1, 92, 40, 0.38, 0.35);
+      play(samples.chirp, tdTime + 0.12, 0.3, { rate: 0.88 });
+      // 역추력 굉음: 접지 직후 엔진이 역추력으로 걸리며 커졌다가 서서히 잦아든다
+      play(samples.roar, tdTime + 0.25, 0.55, { fadeIn: 0.45, fadeOut: 1.5 });
+    } else {
+      burst(white, 'bandpass', 2600, 1100, 1.8, tdTime, 0.32, 0.34, 0.003);   // 타이어가 닿는 '찍' 소리
+      burst(white, 'bandpass', 900, 500, 1.2, tdTime + 0.02, 0.7, 0.22, 0.02); // 고무가 노면을 긁는 스크럽
+      if (tdTime < duration - 0.3) {
+        const sq = ctx.createOscillator(); sq.type = 'sawtooth';
+        const sf = ctx.createBiquadFilter(); sf.type = 'bandpass'; sf.Q.value = 6;
+        const sg = ctx.createGain();
+        sq.frequency.setValueAtTime(1150, tdTime); sq.frequency.exponentialRampToValueAtTime(620, tdTime + 0.3);
+        sf.frequency.setValueAtTime(1500, tdTime); sf.frequency.exponentialRampToValueAtTime(900, tdTime + 0.3);
+        sg.gain.setValueAtTime(0, tdTime); sg.gain.linearRampToValueAtTime(0.09, tdTime + 0.01); sg.gain.exponentialRampToValueAtTime(0.001, tdTime + 0.3);
+        sq.connect(sf); sf.connect(sg); sg.connect(master); sq.start(tdTime); sq.stop(at(tdTime + 0.35));
+      }
+      thump(tdTime + 0.1, 92, 40, 0.38, 0.35);
+      burst(white, 'bandpass', 2100, 1000, 1.6, tdTime + 0.1, 0.25, 0.2, 0.003);
+      burst(white, 'bandpass', 700, 2400, 0.6, tdTime + 0.15, 1.4, 0.16, 0.25); // 스포일러·역추력 바람
     }
-    // 반대쪽 바퀴(살짝 늦게)
-    thump(tdTime + 0.1, 92, 40, 0.38, 0.35);
-    burst(white, 'bandpass', 2100, 1000, 1.6, tdTime + 0.1, 0.25, 0.2, 0.003);
-    // 스포일러·역추력 바람 소리
-    burst(white, 'bandpass', 700, 2400, 0.6, tdTime + 0.15, 1.4, 0.16, 0.25);
     // 앞바퀴 접지
     const noseT = tdTime + Math.min(0.95, (duration - tdTime) * 0.5);
     thump(noseT, 72, 34, 0.36, 0.3);
-    burst(white, 'bandpass', 1400, 700, 1.4, noseT, 0.18, 0.16, 0.004);
+    burst(white, 'bandpass', 1400, 700, 1.4, noseT, 0.18, samples ? 0.1 : 0.16, 0.004);
     // 활주로 이음매 덜컹: 간격이 점점 벌어진다(감속)
     let tt = tdTime + 0.35, gapT = 0.075, amp = 0.2;
     while (tt < duration - 0.15 && amp > 0.02) {
