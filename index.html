@@ -337,6 +337,10 @@
                   <label>위치 <select id="subPos"><option value="bottom" selected>하단</option><option value="middle">중앙</option><option value="top">상단</option></select></label>
                   <label class="check"><input type="checkbox" id="subBg" checked /> 배경 박스</label>
                 </div>
+                <label class="zoomrow">위치 미세 조정 (위 ↑ / 아래 ↓) <output id="subOffsetOut">0%</output>
+                  <input id="subOffset" type="range" min="-30" max="30" step="1" value="0" />
+                  <small>선택한 위치(상단·중앙·하단)에서 화면 높이 대비 %만큼 위·아래로 옮깁니다. 음수는 위, 양수는 아래입니다.</small>
+                </label>
                 <label class="zoomrow">글자 크기 <output id="subSizeOut">100%</output>
                   <input id="subSize" type="range" min="50" max="200" step="5" value="100" />
                 </label>
@@ -475,6 +479,7 @@
         <input id="scrub" type="range" min="0" max="1000" value="0" />
         <button id="soundBtn" class="btn icon" type="button" aria-label="사운드 켜기/끄기" title="사운드 켜기/끄기">🔊</button>
         <input id="soundVolQ" class="volq" type="range" min="0" max="100" step="1" value="60" title="음량 60%" aria-label="음량" />
+        <label class="switch" title="재생이 끝나면 처음부터 자동으로 반복 재생"><input type="checkbox" id="optLoop" /><i></i><span>반복</span></label>
         <label class="switch" title="비행거리 / 왕복이동시간 카드 표시/숨김"><input type="checkbox" id="optCard" checked /><i></i><span>비행거리 / 왕복이동시간</span></label>
         <span id="clock">0:00 / 0:15</span>
       </div>

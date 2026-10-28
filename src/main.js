@@ -304,7 +304,11 @@ function loop(now) {
     if (state.playing) {
       state.t += dt / state.duration;
       if (recorder.on && state.t >= tMax()) stopRecording();
-      if (state.t >= tMax() + 0.12) state.t = 0; // 마지막 장면을 잠시 보여준 뒤 반복
+      if (state.t >= tMax() + 0.12) {
+        // 마지막 장면을 잠시 보여준 뒤 처음으로 돌아간다. 반복이 꺼져 있으면 정지 상태로 대기(▶ 한 번이면 다시 재생)
+        state.t = 0;
+        if (!$('optLoop').checked) { state.playing = false; $('play').textContent = '▶'; }
+      }
     }
     state.t = Math.min(state.t, tMax());
     renderPreview();
@@ -569,7 +573,7 @@ function storyCfg() {
     color: $('storyColor').value, logo: story.logo, logoWater: $('logoWater').checked,
     intro: part('intro'), outro: part('outro'),
     subs: $('optSubs').checked ? story.subs.map((x) => ({ ...x })) : [],
-    subPos: $('subPos').value, subBg: $('subBg').checked, subSize: +$('subSize').value / 100,
+    subPos: $('subPos').value, subOffset: +$('subOffset').value / 100, subBg: $('subBg').checked, subSize: +$('subSize').value / 100,
   };
   return story.cfg;
 }
@@ -609,7 +613,7 @@ function wireStory() {
   for (const [id, list] of [['introTpl', INTRO_TEMPLATES], ['outroTpl', OUTRO_TEMPLATES]]) {
     $(id).innerHTML = list.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
   }
-  for (const [id, out, f] of [['introDur', 'introDurOut', (v) => `${v}초`], ['outroDur', 'outroDurOut', (v) => `${v}초`], ['outroHold', 'holdOut', (v) => `${v}초`], ['subSize', 'subSizeOut', (v) => `${v}%`]]) {
+  for (const [id, out, f] of [['introDur', 'introDurOut', (v) => `${v}초`], ['outroDur', 'outroDurOut', (v) => `${v}초`], ['outroHold', 'holdOut', (v) => `${v}초`], ['subSize', 'subSizeOut', (v) => `${v}%`], ['subOffset', 'subOffsetOut', (v) => `${v}%`]]) {
     $(id).addEventListener('input', (e) => { $(out).textContent = f(e.target.value); });
   }
   const dirty = () => { story.dirty = true; };
@@ -903,7 +907,10 @@ async function init() {
   $('targetMB').oninput = $('fps').onchange = updateBitrateHint;
   updateBitrateHint();
   $('aspect').onchange = $('quality').onchange = syncPreviewSize;
-  $('play').onclick = () => { state.playing = !state.playing; $('play').textContent = state.playing ? '❚❚' : '▶'; };
+  $('play').onclick = () => {
+    if (!state.playing && state.t >= tMax() - 1e-3) state.t = 0; // 끝에서 멈춰 있으면 처음부터
+    state.playing = !state.playing; $('play').textContent = state.playing ? '❚❚' : '▶';
+  };
   $('scrub').oninput = (e) => { state.playing = false; $('play').textContent = '▶'; state.t = (e.target.value / 1000) * tMax(); };
   $('savePng').onclick = savePng;
   $('saveMp4').onclick = saveMp4;

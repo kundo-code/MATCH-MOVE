@@ -175,7 +175,8 @@ function drawSubtitle(ctx, w, h, u, sec, cfg, meta) {
   const lh = size * 1.3, bh = lines.length * lh + size * 0.5;
   const maxLine = Math.max(...lines.map((l) => ctx.measureText(l).width));
   const bw = maxLine + size * 1.2;
-  const cy = cfg.subPos === 'top' ? 150 * u + bh / 2 : cfg.subPos === 'middle' ? h / 2 : h - 190 * u - bh / 2;
+  const base = cfg.subPos === 'top' ? 150 * u + bh / 2 : cfg.subPos === 'middle' ? h / 2 : h - 190 * u - bh / 2;
+  const cy = clamp(base + (cfg.subOffset || 0) * h, bh / 2 + 8 * u, h - bh / 2 - 8 * u); // 선택한 위치에서 위·아래로 미세 조정
   ctx.globalAlpha = a;
   if (cfg.subBg) {
     ctx.beginPath(); ctx.roundRect(w / 2 - bw / 2, cy - bh / 2, bw, bh, size * 0.3);
