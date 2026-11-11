@@ -174,3 +174,51 @@ export function drawLogoMark(ctx, a, cx, cy, r) {
   }
   ctx.restore();
 }
+
+// ── 실제 항공사 엠블럼 이미지 (public/logos/<항공사코드>.png) ─────────────────────────
+// 사용자가 제공한 엠블럼 모음에서 항공사별로 잘라 낸 이미지. 있는 항공사는 상단 항공 정보 박스에 이 이미지를 쓰고,
+// 없는 항공사는 위의 스타일화한 벡터 마크(drawLogoMark)로 대신한다.
+const EMBLEM_IDS = ['KE', '7C', 'NH', 'CX', 'CA', 'MU', 'CI', 'TG', 'VN', 'VJ', 'PR', 'MH', 'GA', 'AK'];
+// 배경이 색으로 꽉 찬 사각형 로고(투명 배경이 아님): 둥근 모서리로 그린다. 나머지는 흰 둥근 배지 위에 얹는다.
+const TILE_EMBLEMS = new Set(['7C', 'NH', 'VJ', 'VN']);
+const EMBLEM_IMG = {};
+
+/** 엠블럼 이미지를 불러온다. 저장 전에 await 해서 모두 준비되게 한다 */
+export function preloadEmblems(base = 'logos/') {
+  return Promise.all(EMBLEM_IDS.map((id) => new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => { EMBLEM_IMG[id] = img; resolve(); };
+    img.onerror = () => resolve(); // 파일이 없으면 벡터 마크로 대체
+    img.src = `${base}${id}.png`;
+  })));
+}
+
+/** 높이 h 기준 엠블럼 칸의 크기 {w,h}. 이미지가 없으면 null */
+export function emblemSize(a, h) {
+  const img = EMBLEM_IMG[a.id];
+  if (!img) return null;
+  const aspect = img.width / img.height;
+  const pad = TILE_EMBLEMS.has(a.id) ? 0 : h * 0.14;
+  // 글자형(가로로 긴) 로고는 높이를 줄이고 폭을 넓힌다 (최대 폭 = 높이의 2.6배)
+  const inner = Math.min(h - pad * 2, (h * 2.6 - pad * 2) / aspect);
+  return { w: inner * aspect + pad * 2, h: inner + pad * 2, inner, aspect, pad };
+}
+
+/** 엠블럼을 (cx, cy)를 중심으로 그린다. 그린 폭을 반환(없으면 0) */
+export function drawEmblem(ctx, a, cx, cy, h) {
+  const img = EMBLEM_IMG[a.id], s = emblemSize(a, h);
+  if (!img || !s) return 0;
+  const x = cx - s.w / 2, y = cy - s.h / 2;
+  ctx.save();
+  const rr = Math.min(s.h * 0.2, 14);
+  if (TILE_EMBLEMS.has(a.id)) {
+    ctx.beginPath(); ctx.roundRect(x, y, s.w, s.h, rr); ctx.clip();
+    ctx.drawImage(img, x, y, s.w, s.h);
+  } else {
+    ctx.beginPath(); ctx.roundRect(x, y, s.w, s.h, rr);
+    ctx.fillStyle = 'rgba(255,255,255,0.94)'; ctx.fill();
+    ctx.drawImage(img, x + s.pad, y + s.pad, s.w - s.pad * 2, s.h - s.pad * 2);
+  }
+  ctx.restore();
+  return s.w;
+}

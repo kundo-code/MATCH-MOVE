@@ -5,9 +5,11 @@ import { greatCircleKm, estimateFlightMinutes, formatDuration } from './flight.j
 import { exportMp4, canvasToPng, downloadBlob, supportsMp4Export } from './exporter.js';
 import { renderFlightAudio, scaleBuffer } from './sound.js';
 import { mixAudio, decodeAudioFile } from './mixer.js';
+import { preloadEmblems } from './logos.js';
 import { drawOverlays, fillTokens, INTRO_TEMPLATES, OUTRO_TEMPLATES } from './overlays.js';
 
 const $ = (id) => document.getElementById(id);
+const emblemsReady = preloadEmblems(); // 항공사 엠블럼 이미지 (저장 전에 준비되도록 기다린다)
 const DEFAULT_ORIGIN = 'ICN-T1';
 const DEFAULT_DEST = 'NRT';
 // 국가를 고르면 처음 선택되는 대표 공항
@@ -368,6 +370,7 @@ async function ensureAssets() {
   if (tiles === 'timeout') $('exportNote').textContent = '위성 타일을 불러오는 데 시간이 오래 걸려 기본 지구 텍스처로 저장합니다. (인터넷 연결을 확인해 주세요)';
   await Promise.all([
     scene.ready,
+    emblemsReady,
     ...['400', '500', '700', '900'].map((w) => document.fonts.load(`${w} 24px "Noto Sans KR"`).catch(() => {})),
   ]);
   await document.fonts.ready;

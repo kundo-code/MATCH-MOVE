@@ -1,7 +1,7 @@
 // 2D 캔버스에 그리는 정보 오버레이. 미리보기와 영상/이미지 출력에 같은 함수를 쓴다.
 import { formatDuration } from './flight.js';
 import { IMAGERY_ATTRIBUTION } from './satellite.js';
-import { drawLogoMark } from './logos.js';
+import { drawLogoMark, emblemSize, drawEmblem } from './logos.js';
 
 export const FONT = "'Noto Sans KR','Pretendard','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif";
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -202,7 +202,10 @@ export function drawHud(ctx, w, h, info, meta) {
   const en = meta.airline.en.toUpperCase();
   const leftW = Math.max(measure(meta.airline.ko, kSize, 700), measure(en, eSize, 500));
   const rightW = Math.max(measure(route, rSize, 900), measure(routeKo, sSize, 500));
-  const lr = (kSize + eSize * 0.7) * 0.62, logoW = meta.showAirlineLogo === false ? 0 : lr * 2 + 14 * u;
+  const lr = (kSize + eSize * 0.7) * 0.62;
+  // 실제 엠블럼 이미지가 있는 항공사는 그 이미지를, 없으면 스타일화한 벡터 마크를 쓴다
+  const emb = meta.showAirlineLogo === false ? null : emblemSize(meta.airline, lr * 2);
+  const logoW = meta.showAirlineLogo === false ? 0 : (emb ? emb.w : lr * 2) + 14 * u;
   const padL = 34 * u + logoW, padR = 28 * u, gapT = 44 * u;
   const topW = Math.min(w - m * 2, padL + leftW + gapT + rightW + padR);
   const y1 = 15 * u + kSize, y2 = y1 + 14 * u + eSize;
@@ -255,7 +258,11 @@ export function drawHud(ctx, w, h, info, meta) {
     glass(ctx, topX, tm, topW, topH, 18 * u, 0.62);
     roundRect(ctx, topX, tm, 10 * u, topH, 5 * u);
     ctx.fillStyle = meta.airline.tail; ctx.fill();
-    if (logoW) drawLogoMark(ctx, meta.airline, topX + 34 * u + lr, tm + (y1 + y2 - eSize * 0.4) / 2, lr);
+    if (logoW) {
+      const cy = tm + (y1 + y2 - eSize * 0.4) / 2;
+      if (emb) drawEmblem(ctx, meta.airline, topX + 34 * u + emb.w / 2, cy, lr * 2);
+      else drawLogoMark(ctx, meta.airline, topX + 34 * u + lr, cy, lr);
+    }
     text(ctx, meta.airline.ko, topX + padL, tm + y1, { size: kSize, weight: 700 });
     text(ctx, en, topX + padL, tm + y2, { size: eSize, weight: 500, color: 'rgba(255,255,255,0.65)' });
     text(ctx, route, topX + topW - padR, tm + rBase, { size: rSize, weight: 900, align: 'right', color: '#fff' });
