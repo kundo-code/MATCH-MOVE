@@ -259,9 +259,10 @@ export function drawHud(ctx, w, h, info, meta) {
     roundRect(ctx, topX, tm, 10 * u, topH, 5 * u);
     ctx.fillStyle = meta.airline.tail; ctx.fill();
     if (logoW) {
-      const cy = tm + (y1 + y2 - eSize * 0.4) / 2;
-      if (emb) drawEmblem(ctx, meta.airline, topX + 34 * u + emb.w / 2, cy, lr * 2);
-      else drawLogoMark(ctx, meta.airline, topX + 34 * u + lr, cy, lr);
+      // 엠블럼의 윗변을 오른쪽 항공사 이름(한글) 글자의 윗변에 맞춘다
+      const top = tm + y1 - kSize * 0.82;
+      if (emb) drawEmblem(ctx, meta.airline, topX + 34 * u + emb.w / 2, top + emb.h / 2, lr * 2);
+      else drawLogoMark(ctx, meta.airline, topX + 34 * u + lr, top + lr, lr);
     }
     text(ctx, meta.airline.ko, topX + padL, tm + y1, { size: kSize, weight: 700 });
     text(ctx, en, topX + padL, tm + y2, { size: eSize, weight: 500, color: 'rgba(255,255,255,0.65)' });
